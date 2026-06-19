@@ -27,9 +27,10 @@ import {
   type AgentResult,
   type ArtifactKind,
   type AuditLog,
+  type EventBus,
+  type EventKind,
   type Proposal,
   type Stage,
-  type Storage,
 } from '@rdma/core';
 
 // Re-export scopeOf so consumers can find it via the package
@@ -122,12 +123,32 @@ export class Pipeline {
   readonly storage: import('@rdma/core').StorageDriver;
   readonly audit: AuditLog;
   private readonly counter: SequenceCounter;
+  private readonly bus: EventBus | null;
 
-  constructor(deps: { registry: import('@rdma/core').AgentRegistry; storage: import('@rdma/core').StorageDriver; audit: AuditLog; counter?: SequenceCounter }) {
+  constructor(deps: {
+    registry: import('@rdma/core').AgentRegistry;
+    storage: import('@rdma/core').StorageDriver;
+    audit: AuditLog;
+    counter?: SequenceCounter;
+    bus?: EventBus;
+  }) {
     this.registry = deps.registry;
     this.storage = deps.storage;
     this.audit = deps.audit;
     this.counter = deps.counter ?? new SequenceCounter();
+    this.bus = deps.bus ?? null;
+  }
+
+  /** Emit a realtime event (no-op if no bus was supplied). */
+  private emit(kind: EventKind, proposal: Proposal, payload?: Record<string, unknown>): void {
+    if (!this.bus) return;
+    this.bus.publish({
+      kind,
+      proposalId: proposal.id,
+      projectId: proposal.projectId,
+      at: new Date().toISOString(),
+      ...(payload ? { payload } : {}),
+    });
   }
 
   /** Create a new proposal and return it. Does NOT auto-step the pipeline. */
@@ -145,6 +166,7 @@ export class Pipeline {
       now,
     });
     await persist(proposal, null, this.audit, (p) => this.storage.saveProposal(p));
+    this.emit('proposal.created', proposal, { title: proposal.title });
     return proposal;
   }
 
@@ -177,6 +199,7 @@ export class Pipeline {
       action: 'agent.handle.start',
       detail: { stage: proposal.status },
     });
+    this.emit('audit.appended', proposal, { stage: proposal.status, kind: 'agent.handle.start' });
 
     const result = await agent.handle(ctx);
 
@@ -187,6 +210,7 @@ export class Pipeline {
       action: 'agent.handle.end',
       detail: { stage: proposal.status, resultKind: result.kind, next: result.kind === 'handoff' ? result.to : result.kind === 'transition' ? result.nextStage : null },
     });
+    this.emit('audit.appended', proposal, { stage: proposal.status, kind: 'agent.handle.end', resultKind: result.kind });
 
     if (result.kind === 'handoff') {
       // Apply artifact (if any) before transition.
@@ -201,6 +225,8 @@ export class Pipeline {
         audit: this.audit,
         save: (p) => this.storage.saveProposal(p),
       });
+      this.emit('stage.transitioned', after, { to: result.to, reason: result.reason });
+      this.emit('proposal.updated', after, { status: after.status });
       return after;
     }
 
@@ -215,6 +241,8 @@ export class Pipeline {
       // emitHandoff, not here).
       const next: Proposal = { ...transitioned, owner: agent.id };
       await persist(next, proposal.status, this.audit, (p) => this.storage.saveProposal(p));
+      this.emit('stage.transitioned', next, { from: proposal.status, to: next.status, reason: result.reason });
+      this.emit('proposal.updated', next, { status: next.status });
       return next;
     }
 
@@ -222,6 +250,7 @@ export class Pipeline {
     if (result.artifact) {
       const withArtifact = appendArtifact(proposal, result.artifact);
       await persist(withArtifact, proposal.status, this.audit, (p) => this.storage.saveProposal(p));
+      this.emit('proposal.updated', withArtifact, { status: withArtifact.status, kind: 'block' });
       return withArtifact;
     }
 

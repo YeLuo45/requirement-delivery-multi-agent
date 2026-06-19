@@ -1,0 +1,26 @@
+{
+  "name": "@rdma/realtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "RDMA realtime — WebSocket bridge that fans StorageDriver + AuditLog changes out to connected dashboards.",
+  "main": "./src/server.ts",
+  "types": "./src/server.ts",
+  "exports": {
+    ".": "./src/server.ts",
+    "./server": "./src/server.ts",
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "test": "node --test --import tsx test/*.test.ts"
+  },
+  "dependencies": {
+    "@rdma/core": "*",
+    "@rdma/persistence": "*",
+    "tsx": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13"
+  }
+}

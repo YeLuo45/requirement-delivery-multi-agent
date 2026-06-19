@@ -125,7 +125,7 @@ export interface AuditEntry {
 
 export interface AgentContext {
   readonly proposal: Proposal;
-  readonly storage: import('./storage.js').Storage;
+  readonly storage: import('./storage.js').StorageDriver;
   readonly audit: import('./audit-log.js').AuditLog;
   readonly now: () => Date;
 }
