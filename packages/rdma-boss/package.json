@@ -10,7 +10,7 @@
     "test": "node --test --import tsx test/*.test.ts"
   },
   "dependencies": {
-    "@rdma/core": "workspace:*",
+    "@rdma/core": "*",
     "tsx": "^4.19.2"
   }
 }
