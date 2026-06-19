@@ -2,8 +2,8 @@
  * Proposal detail page — handoff chain, audit log, artifacts.
  */
 
-import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useProposalDetail } from '../App';
 
 interface Proposal {
   id: string;
@@ -42,19 +42,7 @@ interface DetailResponse {
 
 export function ProposalDetail() {
   const { id } = useParams<{ id: string }>();
-  const [data, setData] = useState<DetailResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!id) return;
-    fetch(`/api/proposals/${id}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((d) => setData(d))
-      .catch((e) => setError(String(e)));
-  }, [id]);
+  const { data, source, error } = useProposalDetail(id);
 
   if (error) {
     return (
@@ -67,24 +55,52 @@ export function ProposalDetail() {
   }
   if (!data) return <div className="empty">Loading…</div>;
 
-  const p = data.proposal;
+  const detail = data as DetailResponse;
+  const p = detail.proposal;
 
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
-        <Link to="/proposals" style={{ fontSize: 13 }}>← All proposals</Link>
+        <Link to="/proposals" style={{ fontSize: 13 }}>
+          ← All proposals
+        </Link>
+        {source === 'demo' && (
+          <span
+            style={{
+              marginLeft: 12,
+              fontSize: 11,
+              padding: '2px 8px',
+              background: 'var(--bg-elevated-2)',
+              border: '1px solid var(--border)',
+              borderRadius: 12,
+              color: 'var(--fg-muted)',
+            }}
+          >
+            DEMO DATA
+          </span>
+        )}
       </div>
 
       <div className="card">
         <h2>
-          {p.title}
-          {' '}
-          <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--fg-muted)' }}>{p.id}</span>
+          {p.title}{' '}
+          <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--fg-muted)' }}>
+            {p.id}
+          </span>
         </h2>
         <p style={{ color: 'var(--fg-muted)', fontSize: 14 }}>{p.rawRequirement}</p>
-        <div style={{ marginTop: 12, display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13 }}>
+        <div
+          style={{
+            marginTop: 12,
+            display: 'flex',
+            gap: 16,
+            flexWrap: 'wrap',
+            fontSize: 13,
+          }}
+        >
           <span>
-            Status: <span className={`status-badge status-${p.status}`}>{p.status}</span>
+            Status:{' '}
+            <span className={`status-badge status-${p.status}`}>{p.status}</span>
           </span>
           <span style={{ color: 'var(--fg-muted)' }}>
             Project: <code>{p.projectId}</code>
@@ -109,10 +125,15 @@ export function ProposalDetail() {
       <div className="card">
         <h2>Handoff chain</h2>
         <div className="handoff-chain">
-          {data.handoffChain.map((agent, i) => (
-            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          {detail.handoffChain.map((agent, i) => (
+            <span
+              key={i}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+            >
               <span className="agent">{agent}</span>
-              {i < data.handoffChain.length - 1 && <span className="arrow">→</span>}
+              {i < detail.handoffChain.length - 1 && (
+                <span className="arrow">→</span>
+              )}
             </span>
           ))}
         </div>
@@ -124,7 +145,8 @@ export function ProposalDetail() {
           <div key={a.id} className="artifact">
             <div className="artifact-summary">{a.summary}</div>
             <div className="artifact-meta">
-              {a.kind} · {a.agentId} · {new Date(a.createdAt).toLocaleString()}
+              {a.kind} · {a.agentId} ·{' '}
+              {new Date(a.createdAt).toLocaleString()}
             </div>
             <div className="artifact-content">{a.content}</div>
           </div>
@@ -132,13 +154,11 @@ export function ProposalDetail() {
       </div>
 
       <div className="card">
-        <h2>Audit log ({data.audit.length})</h2>
-        {data.audit.map((e) => (
+        <h2>Audit log ({detail.audit.length})</h2>
+        {detail.audit.map((e) => (
           <div key={e.id} className="audit-entry">
-            <span style={{ color: 'var(--fg-muted)' }}>{e.at}</span>
-            {' '}
-            <span className="actor">{e.actor}</span>
-            {' '}
+            <span style={{ color: 'var(--fg-muted)' }}>{e.at}</span>{' '}
+            <span className="actor">{e.actor}</span>{' '}
             <span className="action">{e.action}</span>
             {Object.keys(e.detail).length > 0 && (
               <span style={{ color: 'var(--fg-muted)' }}>

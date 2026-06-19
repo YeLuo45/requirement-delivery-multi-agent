@@ -19,7 +19,9 @@
     "dev:server": "npm run dev --workspace=@rdma/mcp-server",
     "cli": "npm run start --workspace=@rdma/cli --",
     "e2e": "node --test --import tsx scripts/e2e-hello-world.test.ts",
-    "bootstrap": "node --import tsx scripts/bootstrap-demo.mjs"
+    "bootstrap": "node --import tsx scripts/bootstrap-demo.mjs",
+    "seed:demo": "node scripts/seed-demo-data.mjs",
+    "regen:demo": "node scripts/regenerate-demo-data.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

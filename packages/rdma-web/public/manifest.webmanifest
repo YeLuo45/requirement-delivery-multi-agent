@@ -1,0 +1,10 @@
+{
+  "name": "requirement-delivery-multi-agent-web",
+  "short_name": "RDMA",
+  "description": "Multi-agent requirement delivery — monitoring dashboard",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0e1116",
+  "theme_color": "#58a6ff",
+  "icons": []
+}

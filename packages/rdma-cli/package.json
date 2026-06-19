@@ -17,14 +17,14 @@
     "rdma": "node --import tsx src/cli.ts"
   },
   "dependencies": {
-    "@rdma/core": "*",
-    "@rdma/coordinator": "*",
-    "@rdma/research": "*",
-    "@rdma/designer": "*",
-    "@rdma/pm": "*",
-    "@rdma/dev": "*",
-    "@rdma/qa": "*",
-    "@rdma/boss": "*",
+    "@rdma/core": "workspace:*",
+    "@rdma/coordinator": "workspace:*",
+    "@rdma/research": "workspace:*",
+    "@rdma/designer": "workspace:*",
+    "@rdma/pm": "workspace:*",
+    "@rdma/dev": "workspace:*",
+    "@rdma/qa": "workspace:*",
+    "@rdma/boss": "workspace:*",
     "tsx": "^4.19.2"
   }
 }

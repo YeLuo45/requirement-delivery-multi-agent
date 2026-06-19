@@ -12,14 +12,14 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "@rdma/boss": "*",
-    "@rdma/coordinator": "*",
-    "@rdma/core": "*",
-    "@rdma/designer": "*",
-    "@rdma/dev": "*",
-    "@rdma/pm": "*",
-    "@rdma/qa": "*",
-    "@rdma/research": "*",
+    "@rdma/boss": "workspace:*",
+    "@rdma/coordinator": "workspace:*",
+    "@rdma/core": "workspace:*",
+    "@rdma/designer": "workspace:*",
+    "@rdma/dev": "workspace:*",
+    "@rdma/pm": "workspace:*",
+    "@rdma/qa": "workspace:*",
+    "@rdma/research": "workspace:*",
     "tsx": "^4.19.2",
     "zod": "4.4.3"
   }
