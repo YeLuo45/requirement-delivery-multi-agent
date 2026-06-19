@@ -66,7 +66,10 @@ export interface BuildDeps {
   pipeline: Pipeline;
 }
 
-export function buildDeps(storageRoot: string = STORAGE_ROOT): BuildDeps {
+export async function buildDeps(
+  storageRoot: string = STORAGE_ROOT,
+  opts: { useLlm?: boolean } = {},
+): BuildDeps {
   const storage = new Storage({ root: storageRoot });
   const audit = new AuditLog(storage);
   const registry = new AgentRegistry();
@@ -75,9 +78,33 @@ export function buildDeps(storageRoot: string = STORAGE_ROOT): BuildDeps {
   registry.register(createDesignerAgent());
   registry.register(createPmAgent());
   registry.register(createDevAgent());
-  // Inject the resolved shipped root so deployment records land in the right place.
-  registry.register(createQaAgent());
-  registry.register(createBossAgent({ shippedRoot: SHIPPED_ROOT }));
+
+  if (opts.useLlm) {
+    // Lazy import to avoid loading the LLM providers when not needed.
+    const { createAnthropicProvider } = await import('@rdma/llm/anthropic');
+    const { createOpenAiProvider } = await import('@rdma/llm/openai');
+    const model =
+      process.env['ANTHROPIC_API_KEY']
+        ? createAnthropicProvider({ apiKey: process.env['ANTHROPIC_API_KEY'] })
+        : process.env['OPENAI_API_KEY']
+          ? createOpenAiProvider({ apiKey: process.env['OPENAI_API_KEY'] })
+          : null;
+    if (model) {
+      registry.register(createPmAgent({ model }));
+      registry.register(createDevAgent({ model }));
+      registry.register(createQaAgent({ model }));
+      console.error(`[rdma] using LLM provider: ${model.name} (${model.defaultModel})`);
+    } else {
+      console.error('[rdma] --use-llm set but no ANTHROPIC_API_KEY / OPENAI_API_KEY; falling back to mock agents');
+      registry.register(createQaAgent());
+    }
+  } else {
+    registry.register(createQaAgent());
+  }
+
+  registry.register(
+    createBossAgent({ shippedRoot: SHIPPED_ROOT }),
+  );
   const pipeline = new Pipeline({ registry, storage, audit });
   return { registry, storage, audit, pipeline };
 }
@@ -119,13 +146,14 @@ export async function cmdDeliver(argv: string[]): Promise<void> {
   const url = typeof flags['url'] === 'string' ? flags['url'] : undefined;
   const priority = typeof flags['priority'] === 'string' ? flags['priority'] : undefined;
   const scope = typeof flags['scope'] === 'string' ? flags['scope'] : undefined;
+  const useLlm = flags['use-llm'] === true;
 
   if (!title || !requirement) {
-    console.error('Usage: rdma deliver <title> --requirement "<text>" [--url <src>]');
+    console.error('Usage: rdma deliver <title> --requirement "<text>" [--url <src>] [--use-llm]');
     process.exit(1);
   }
 
-  const { pipeline } = buildDeps();
+  const { pipeline } = await buildDeps(STORAGE_ROOT, { useLlm });
   const tags: Record<string, string> = {};
   if (priority) tags['priority'] = priority;
   if (scope) tags['scope'] = scope;
@@ -154,7 +182,7 @@ export async function cmdDeliver(argv: string[]): Promise<void> {
 export async function cmdList(argv: string[]): Promise<void> {
   const { flags } = parseArgs(argv);
   const status = typeof flags['status'] === 'string' ? (flags['status'] as Stage) : undefined;
-  const { storage, audit } = buildDeps();
+  const { storage, audit } = await buildDeps(STORAGE_ROOT);
   const proposals = await storage.listProposals();
   const filtered = status ? proposals.filter((p) => p.status === status) : proposals;
   if (filtered.length === 0) {
@@ -178,7 +206,7 @@ export async function cmdShow(argv: string[]): Promise<void> {
     console.error('Usage: rdma show <proposal-id>');
     process.exit(1);
   }
-  const { storage, audit } = buildDeps();
+  const { storage, audit } = await buildDeps(STORAGE_ROOT);
   const proposal = await storage.getProposal(id);
   console.log(`Proposal ${proposal.id}`);
   console.log(`  project:     ${proposal.projectId}`);
@@ -217,7 +245,7 @@ export async function cmdShow(argv: string[]): Promise<void> {
 }
 
 export async function cmdStatus(_argv: string[]): Promise<void> {
-  const { storage, registry } = buildDeps();
+  const { storage, registry } = await buildDeps(STORAGE_ROOT);
   const proposals = await storage.listProposals();
   const counts = new Map<Stage, number>();
   for (const p of proposals) {
@@ -268,7 +296,7 @@ export async function cmdReset(argv: string[]): Promise<void> {
 }
 
 export async function cmdDemo(_argv: string[]): Promise<void> {
-  const { pipeline, audit } = buildDeps();
+  const { pipeline, audit } = await buildDeps(STORAGE_ROOT);
   const samples: Array<{ title: string; rawRequirement: string; tags?: Record<string, string> }> = [
     {
       title: 'JSON to CSV CLI',

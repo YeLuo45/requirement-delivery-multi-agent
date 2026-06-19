@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@rdma/core": "*",
+    "@rdma/llm": "*",
     "tsx": "^4.19.2"
   }
 }

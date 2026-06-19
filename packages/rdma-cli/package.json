@@ -25,6 +25,7 @@
     "@rdma/dev": "*",
     "@rdma/qa": "*",
     "@rdma/boss": "*",
+    "@rdma/llm": "*",
     "tsx": "^4.19.2"
   }
 }

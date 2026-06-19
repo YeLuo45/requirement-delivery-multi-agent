@@ -6,9 +6,13 @@
  *   prd_pending_confirmation — PRD is written; awaiting boss approval
  *   approved_for_dev        — PM hands off to dev with the implementation plan
  *
- * Default implementation is deterministic — it auto-resolves clarification
- * after one round with a structured PRD, then auto-approves on the next
- * stage transition. A real implementation would block on user input.
+ * Two modes:
+ *   - **Mock mode** (default, no model): deterministic PRD/plan rendering.
+ *     Used in tests and the v0.1 demo path.
+ *   - **LLM mode** (model provided): uses an `LlmProvider` from `@rdma/llm`
+ *     to generate PRD / plan text. Adds structure: produces the same
+ *     Markdown shape the deterministic version does, so downstream agents
+ *     can parse it identically.
  */
 
 import {
@@ -20,6 +24,7 @@ import {
   type Proposal,
   type Stage,
 } from '@rdma/core';
+import type { LlmProvider } from '@rdma/llm';
 
 export const PM_ID: AgentId = 'pm';
 
@@ -81,12 +86,162 @@ function renderPlan(p: Proposal): string {
     '',
     `## Exit criteria`,
     `- All tests pass`,
-    `- CLI runs with the --help flag and one example invocation`,
+    `- CLI runs with --help flag and one example invocation`,
     `- README is complete`,
   ].join('\n');
 }
 
-export function createPmAgent(): Agent {
+/** Shape we extract from the LLM's PRD response. */
+function extractSection(text: string, header: string): string {
+  const lines = text.split('\n');
+  let capturing = false;
+  const out: string[] = [];
+  for (const line of lines) {
+    if (line.match(/^#{1,3}\s/)) {
+      if (line.toLowerCase().includes(header.toLowerCase())) {
+        capturing = true;
+        continue;
+      } else if (capturing) {
+        break;
+      }
+    }
+    if (capturing) out.push(line);
+  }
+  return out.join('\n').trim();
+}
+
+/**
+ * Render PRD via LLM. We ask the model to produce Markdown with the standard
+ * sections (Problem / Goals / Non-goals / User stories / Acceptance criteria);
+ * we then re-format to match the deterministic shape so downstream parsers
+ * don't care which mode produced the PRD.
+ */
+async function renderPRDViaLlm(
+  p: Proposal,
+  model: LlmProvider,
+): Promise<string> {
+  const systemPrompt =
+    'You are a product manager writing a PRD for a small, single-developer ' +
+    'open-source tool. Be concise. Use Markdown sections exactly as specified. ' +
+    'Do not invent features beyond what the requirement asks for. ' +
+    'Keep the non-goals list short and honest.';
+
+  const userPrompt = [
+    `Title: ${p.title}`,
+    `Requirement: ${p.rawRequirement}`,
+    p.sourceUrl ? `Source: ${p.sourceUrl}` : '',
+    '',
+    'Produce a PRD with these sections (use exactly these Markdown headers):',
+    '',
+    '# PRD: <title>',
+    '## Problem',
+    '## Goals',
+    '## Non-goals',
+    '## User stories',
+    '## Acceptance criteria',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const result = await model.complete({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    maxTokens: 1500,
+    temperature: 0.4,
+  });
+
+  // Compose the final PRD. We use the LLM output for the free-form sections
+  // and append the auto-derived Risks / Design sections from attached artifacts
+  // (so downstream agents don't need to know whether the PRD was LLM-generated).
+  const problem = extractSection(result.text, '## Problem') || p.rawRequirement;
+  const goals = extractSection(result.text, '## Goals');
+  const nonGoals = extractSection(result.text, '## Non-goals');
+  const userStories = extractSection(result.text, '## User stories');
+  const acceptance = extractSection(result.text, '## Acceptance criteria');
+
+  const brief = latestArtifact(p, 'requirement_brief');
+  const design = latestArtifact(p, 'design_spec');
+
+  return [
+    `# PRD: ${p.title}`,
+    '',
+    `## Problem`,
+    problem,
+    '',
+    `## Goals`,
+    goals || '- Deliver a working artifact that solves the stated problem end-to-end.',
+    '',
+    `## Non-goals`,
+    nonGoals || '- Production-grade observability.\n- Multi-tenant support.',
+    '',
+    `## User stories`,
+    userStories || '- As a user, I can run the artifact with one command.',
+    '',
+    `## Acceptance criteria`,
+    acceptance ||
+      '1. The artifact compiles cleanly from a fresh clone.\n2. A smoke test passes.\n3. Edge cases are handled.',
+    '',
+    `## Risks (from research brief)`,
+    brief ? 'See attached `requirement_brief` artifact.' : '_No research brief attached._',
+    '',
+    `## Design`,
+    design ? 'See attached `design_spec` artifact.' : '_No design spec attached (non-UI work)._',
+  ].join('\n');
+}
+
+/**
+ * Render implementation plan via LLM.
+ */
+async function renderPlanViaLlm(p: Proposal, model: LlmProvider): Promise<string> {
+  const systemPrompt =
+    'You are a senior engineer writing an implementation plan for a small ' +
+    'open-source tool. Be concrete. Use Markdown sections. Phases should be ' +
+    'ordered and each should have a clear exit criterion.';
+
+  const userPrompt = [
+    `Title: ${p.title}`,
+    `Requirement: ${p.rawRequirement}`,
+    '',
+    'Produce a plan with these Markdown sections:',
+    '# Implementation Plan: <title>',
+    '## Phases',
+    '## Exit criteria',
+  ].join('\n');
+
+  const result = await model.complete({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    maxTokens: 1000,
+    temperature: 0.3,
+  });
+
+  const phases = extractSection(result.text, '## Phases');
+  const exitCriteria = extractSection(result.text, '## Exit criteria');
+
+  return [
+    `# Implementation Plan: ${p.title}`,
+    '',
+    `## Phases`,
+    phases ||
+      '1. Setup\n2. TDD core\n3. Edge cases\n4. CLI surface\n5. Docs\n6. Smoke test',
+    '',
+    `## Exit criteria`,
+    exitCriteria || '- All tests pass\n- CLI runs with --help and one example\n- README is complete',
+  ].join('\n');
+}
+
+export interface PmAgentConfig {
+  /** Optional LLM provider. When omitted, falls back to deterministic rendering. */
+  model?: LlmProvider;
+}
+
+export function createPmAgent(config: PmAgentConfig = {}): Agent {
+  const model = config.model;
+
   return {
     id: PM_ID,
     name: 'pm',
@@ -96,18 +251,15 @@ export function createPmAgent(): Agent {
 
       switch (p.status) {
         case 'clarifying': {
-          // First clarifying round: draft the PRD. Subsequent rounds:
-          // (in a real implementation) incorporate feedback. For v0.1 we
-          // always advance after one round.
           if (p.clarificationRound === 0) {
             const next: Proposal = {
               ...p,
               clarificationRound: 1,
               owner: PM_ID,
             };
-            // We can't transition to prd_pending_confirmation inside the
-            // agent — the Pipeline handles transitions. So we emit the
-            // PRD as an artifact and request a transition.
+            const content = model
+              ? await renderPRDViaLlm(next, model)
+              : renderPRD(next);
             return {
               kind: 'transition',
               nextStage: 'prd_pending_confirmation',
@@ -115,12 +267,11 @@ export function createPmAgent(): Agent {
               artifact: {
                 kind: 'prd',
                 agentId: PM_ID,
-                summary: `PRD: ${p.title}`,
-                content: renderPRD(next),
+                summary: `PRD: ${p.title}${model ? ' (LLM)' : ''}`,
+                content,
               },
             };
           }
-          // Late round: same behavior — advance.
           return {
             kind: 'transition',
             nextStage: 'prd_pending_confirmation',
@@ -129,8 +280,6 @@ export function createPmAgent(): Agent {
         }
 
         case 'prd_pending_confirmation': {
-          // In a real implementation we'd block here until the boss
-          // confirms. v0.1 auto-approves.
           return {
             kind: 'transition',
             nextStage: 'approved_for_dev',
@@ -139,7 +288,9 @@ export function createPmAgent(): Agent {
         }
 
         case 'approved_for_dev': {
-          // Hand off to dev with the implementation plan.
+          const content = model
+            ? await renderPlanViaLlm(p, model)
+            : renderPlan(p);
           return {
             kind: 'handoff',
             to: 'dev',
@@ -147,8 +298,8 @@ export function createPmAgent(): Agent {
             artifact: {
               kind: 'plan',
               agentId: PM_ID,
-              summary: `Implementation plan: ${p.title}`,
-              content: renderPlan(p),
+              summary: `Implementation plan: ${p.title}${model ? ' (LLM)' : ''}`,
+              content,
             },
           };
         }

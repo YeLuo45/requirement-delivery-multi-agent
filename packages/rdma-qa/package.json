@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "QA agent — runs acceptance tests against the implementation. Owns in_test_acceptance and test_failed stages.",
+  "description": "QA agent — acceptance tests against the implementation. Owns in_test_acceptance and test_failed stages.",
   "main": "./src/agent.ts",
   "types": "./src/agent.ts",
   "scripts": {
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@rdma/core": "*",
+    "@rdma/llm": "*",
     "tsx": "^4.19.2"
   }
 }
