@@ -1,0 +1,16 @@
+{
+  "name": "@rdma/qa",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "QA agent — runs acceptance tests against the implementation. Owns in_test_acceptance and test_failed stages.",
+  "main": "./src/agent.ts",
+  "types": "./src/agent.ts",
+  "scripts": {
+    "test": "node --test --import tsx test/*.test.ts"
+  },
+  "dependencies": {
+    "@rdma/core": "*",
+    "tsx": "^4.19.2"
+  }
+}

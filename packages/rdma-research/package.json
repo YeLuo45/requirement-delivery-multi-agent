@@ -1,0 +1,16 @@
+{
+  "name": "@rdma/research",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Market research agent — scans internet for similar projects, decomposes the requirement, and produces a risk register. Owns research_direction_pending and research stages.",
+  "main": "./src/agent.ts",
+  "types": "./src/agent.ts",
+  "scripts": {
+    "test": "node --test --import tsx test/*.test.ts"
+  },
+  "dependencies": {
+    "@rdma/core": "*",
+    "tsx": "^4.19.2"
+  }
+}

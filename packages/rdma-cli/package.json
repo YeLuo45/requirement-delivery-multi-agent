@@ -1,0 +1,30 @@
+{
+  "name": "@rdma/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "RDMA CLI — the main entry point for delivering requirements end-to-end.",
+  "main": "./src/cli.ts",
+  "types": "./src/cli.ts",
+  "bin": {
+    "rdma": "./src/cli.ts"
+  },
+  "exports": {
+    "./run": "./src/run.ts"
+  },
+  "scripts": {
+    "start": "node --import tsx src/cli.ts",
+    "rdma": "node --import tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@rdma/core": "*",
+    "@rdma/coordinator": "*",
+    "@rdma/research": "*",
+    "@rdma/designer": "*",
+    "@rdma/pm": "*",
+    "@rdma/dev": "*",
+    "@rdma/qa": "*",
+    "@rdma/boss": "*",
+    "tsx": "^4.19.2"
+  }
+}

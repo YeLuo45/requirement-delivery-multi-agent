@@ -1,0 +1,26 @@
+{
+  "name": "@rdma/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "RDMA MCP server — exposes the multi-agent pipeline as a set of MCP tools.",
+  "main": "./src/server.ts",
+  "types": "./src/server.ts",
+  "scripts": {
+    "dev": "node --import tsx src/server.ts",
+    "start": "node --import tsx src/server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@rdma/boss": "*",
+    "@rdma/coordinator": "*",
+    "@rdma/core": "*",
+    "@rdma/designer": "*",
+    "@rdma/dev": "*",
+    "@rdma/pm": "*",
+    "@rdma/qa": "*",
+    "@rdma/research": "*",
+    "tsx": "^4.19.2",
+    "zod": "4.4.3"
+  }
+}

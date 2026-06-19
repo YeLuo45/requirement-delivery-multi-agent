@@ -1,0 +1,26 @@
+{
+  "name": "@rdma/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "RDMA web dashboard — React + Vite monitoring UI for the multi-agent pipeline.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "vite preview --port 4173"
+  },
+  "dependencies": {
+    "@rdma/core": "*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
+  }
+}

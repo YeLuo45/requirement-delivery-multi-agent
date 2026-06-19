@@ -1,0 +1,33 @@
+{
+  "name": "requirement-delivery-multi-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-agent system that delivers internet-sourced requirements end-to-end. Built on a 7-agent state machine (research -> coordinator -> designer -> pm -> dev -> qa -> boss) with Spec-Driven Development, subagent-driven implementation, and full handoff audit trail.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "bash scripts/test-all.sh",
+    "test:core": "npm run test --workspace=@rdma/core",
+    "test:e2e": "node --test --import tsx scripts/e2e-hello-world.test.ts",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "check": "biome check . && tsc --noEmit -p packages/rdma-core",
+    "dev:web": "npm run dev --workspace=@rdma/web",
+    "dev:server": "npm run dev --workspace=@rdma/mcp-server",
+    "cli": "npm run start --workspace=@rdma/cli --",
+    "e2e": "node --test --import tsx scripts/e2e-hello-world.test.ts",
+    "bootstrap": "node --import tsx scripts/bootstrap-demo.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vite": "6.0.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

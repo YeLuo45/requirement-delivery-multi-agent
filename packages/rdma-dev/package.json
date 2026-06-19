@@ -1,0 +1,16 @@
+{
+  "name": "@rdma/dev",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dev agent — TDD-style implementation using a sandboxed file workspace. Owns in_tdd_test and in_dev stages.",
+  "main": "./src/agent.ts",
+  "types": "./src/agent.ts",
+  "scripts": {
+    "test": "node --test --import tsx test/*.test.ts"
+  },
+  "dependencies": {
+    "@rdma/core": "*",
+    "tsx": "^4.19.2"
+  }
+}
