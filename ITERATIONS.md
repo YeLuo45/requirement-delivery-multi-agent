@@ -224,11 +224,14 @@ git push -u origin feature/rdma-A1-llm-provider
 | 轮次 | 方向 | 子任务 | tests pass | 新增 LoC | commit |
 |---|---|---|---|---|---|
 | 0 | (v0.1.0) | — | 33/33 | ~3500 | 349eba5 |
-| 1 | C | vite build fix + GH Pages | 33/33 | ~200 | — |
-| 2 | A1 | LLM provider 接口 | 36/36 | ~400 | — |
-| 3 | A2-A3 | Anthropic + OpenAI | 40/40 | ~600 | — |
-| 4 | A4-A5 | PM + Dev 接 LLM | 45/45 | ~800 | — |
-| 5 | A6-A8 | QA + Research + e2e | 50/50 | ~700 | — |
+| 1 | C | vite build fix + GH Pages | 33/33 | ~200 | 5c38c0d |
+| 2 | A1 | LLM provider 接口 | 36/36 | ~400 | 031f7df |
+| 3 | A2-A3 | Anthropic + OpenAI | 40/40 | ~600 | 031f7df |
+| 4 | A4 | PM 接 LLM | 47/47 | ~500 | b7aad0e |
+| 5 | A5 | Dev 接 LLM | 54/54 | ~500 | b7aad0e |
+| 6 | A6-A8 | QA + Research + WebResearchProvider | 63/63 | ~790 | b7aad0e |
+
+> 实测当前完整 63/63 tests passing（27 core + 6 e2e + 7 pm + 7 dev + 8 qa + 8 research）。
 
 ---
 
