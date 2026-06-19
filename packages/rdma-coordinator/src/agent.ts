@@ -119,11 +119,11 @@ export function createCoordinatorAgent(): Agent {
  */
 export class Pipeline {
   private readonly registry: import('@rdma/core').AgentRegistry;
-  readonly storage: Storage;
+  readonly storage: import('@rdma/core').StorageDriver;
   readonly audit: AuditLog;
   private readonly counter: SequenceCounter;
 
-  constructor(deps: { registry: import('@rdma/core').AgentRegistry; storage: Storage; audit: AuditLog; counter?: SequenceCounter }) {
+  constructor(deps: { registry: import('@rdma/core').AgentRegistry; storage: import('@rdma/core').StorageDriver; audit: AuditLog; counter?: SequenceCounter }) {
     this.registry = deps.registry;
     this.storage = deps.storage;
     this.audit = deps.audit;

@@ -8,7 +8,14 @@
 
 import { promises as fs, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { AgentRegistry, AuditLog, Storage, type Stage, type Proposal } from '@rdma/core';
+import {
+  AgentRegistry,
+  AuditLog,
+  Storage,
+  type Stage,
+  type Proposal,
+  type StorageDriver,
+} from '@rdma/core';
 import { Pipeline, createCoordinatorAgent } from '@rdma/coordinator';
 import { createResearchAgent } from '@rdma/research';
 import { createDesignerAgent } from '@rdma/designer';
@@ -61,16 +68,50 @@ export const SHIPPED_ROOT = (() => {
 
 export interface BuildDeps {
   registry: AgentRegistry;
-  storage: Storage;
+  storage: StorageDriver;
   audit: AuditLog;
   pipeline: Pipeline;
 }
 
+/**
+ * Build a StorageDriver from a backend tag.
+ *
+ *   - "json"  → JSON files at <root> (default; zero deps)
+ *   - "sqlite" → single .sqlite file at <root>.sqlite (needs better-sqlite3)
+ *
+ * Falls back to JSON if the requested backend can't be loaded.
+ */
+export async function createStorage(
+  root: string,
+  backend: 'json' | 'sqlite' = 'json',
+): Promise<StorageDriver> {
+  if (backend === 'sqlite') {
+    try {
+      const { SqliteStorage } = await import('@rdma/persistence/sqlite');
+      const sqlitePath = root.endsWith('.sqlite') ? root : `${root}.sqlite`;
+      const store = await SqliteStorage.open({ path: sqlitePath });
+      console.error(`[rdma] storage backend: ${store.backendName}`);
+      return store;
+    } catch (err) {
+      console.error(
+        `[rdma] --storage sqlite requested but unavailable (${(err as Error).message}); falling back to JSON`,
+      );
+    }
+  }
+  const jsonStore = new Storage({ root });
+  await jsonStore.init();
+  console.error(`[rdma] storage backend: ${jsonStore.backendName}`);
+  return jsonStore;
+}
+
 export async function buildDeps(
   storageRoot: string = STORAGE_ROOT,
-  opts: { useLlm?: boolean } = {},
-): BuildDeps {
-  const storage = new Storage({ root: storageRoot });
+  opts: { useLlm?: boolean; storage?: 'json' | 'sqlite' } = {},
+): Promise<BuildDeps> {
+  const storage = await createStorage(
+    storageRoot,
+    opts.storage ?? 'json',
+  );
   const audit = new AuditLog(storage);
   const registry = new AgentRegistry();
   registry.register(createResearchAgent());
@@ -139,6 +180,19 @@ export function parseArgs(argv: string[]): ParsedFlags {
   return { positional, flags };
 }
 
+/**
+ * Resolve which storage backend a subcommand should use. Honors (in order):
+ *   1. The subcommand's --storage flag.
+ *   2. The RDMA_STORAGE env var.
+ *   3. The default ("json").
+ */
+function resolveStorageBackend(flags: Record<string, string | boolean>): 'json' | 'sqlite' {
+  const raw = (typeof flags['storage'] === 'string' ? flags['storage'] : process.env['RDMA_STORAGE']) ?? 'json';
+  if (raw === 'json' || raw === 'sqlite') return raw;
+  console.error(`[rdma] unknown --storage "${raw}"; expected json|sqlite (using json)`);
+  return 'json';
+}
+
 export async function cmdDeliver(argv: string[]): Promise<void> {
   const { positional, flags } = parseArgs(argv);
   const title = positional[0];
@@ -147,13 +201,14 @@ export async function cmdDeliver(argv: string[]): Promise<void> {
   const priority = typeof flags['priority'] === 'string' ? flags['priority'] : undefined;
   const scope = typeof flags['scope'] === 'string' ? flags['scope'] : undefined;
   const useLlm = flags['use-llm'] === true;
+  const storage = resolveStorageBackend(flags);
 
   if (!title || !requirement) {
-    console.error('Usage: rdma deliver <title> --requirement "<text>" [--url <src>] [--use-llm]');
+    console.error('Usage: rdma deliver <title> --requirement "<text>" [--url <src>] [--use-llm] [--storage json|sqlite]');
     process.exit(1);
   }
 
-  const { pipeline } = await buildDeps(STORAGE_ROOT, { useLlm });
+  const { pipeline } = await buildDeps(STORAGE_ROOT, { useLlm, storage });
   const tags: Record<string, string> = {};
   if (priority) tags['priority'] = priority;
   if (scope) tags['scope'] = scope;

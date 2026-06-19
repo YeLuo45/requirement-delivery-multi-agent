@@ -24,11 +24,39 @@ export interface StorageOptions {
   readonly root: string;
 }
 
-export class Storage {
+/**
+ * Storage backend abstraction — every concrete backend (JSON files, SQLite,
+ * in-memory) implements the same surface. The Pipeline doesn't know which
+ * backend it's talking to; CLI / MCP / Web pick one at boot.
+ *
+ * Lifecycle:
+ *   1. caller constructs a driver
+ *   2. caller calls `init()` to create any directories / run migrations
+ *   3. driver is now ready for read/write traffic
+ */
+export interface StorageDriver {
+  /** Initialize backend state (create dirs, run migrations). Idempotent. */
+  init(): Promise<void>;
+  /** Stable, human-readable backend tag for diagnostics ("json", "sqlite:..."). */
+  readonly backendName: string;
+  /** Underlying root path (or ":memory:" for in-memory). */
   readonly root: string;
+  saveProposal(proposal: Proposal): Promise<void>;
+  getProposal(proposalId: string): Promise<Proposal>;
+  listProposals(projectId?: string): Promise<ReadonlyArray<Proposal>>;
+  listProjects(): Promise<ReadonlyArray<string>>;
+  appendAudit(proposalId: string, projectId: string, line: string): Promise<void>;
+  readAudit(proposalId: string, projectId: string): Promise<ReadonlyArray<string>>;
+  readMeta(): Promise<{ version: number; createdAt: string }>;
+}
+
+export class Storage implements StorageDriver {
+  readonly root: string;
+  readonly backendName: string;
 
   constructor(opts: StorageOptions) {
     this.root = path.resolve(opts.root);
+    this.backendName = `json:${this.root}`;
   }
 
   async init(): Promise<void> {

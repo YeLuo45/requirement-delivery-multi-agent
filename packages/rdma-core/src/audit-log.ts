@@ -8,12 +8,12 @@
 
 import { randomUUID } from 'node:crypto';
 import type { AgentId, AuditAction, AuditEntry } from './types.js';
-import type { Storage } from './storage.js';
+import type { StorageDriver } from './storage.js';
 
 export class AuditLog {
-  readonly storage: Storage;
+  readonly storage: StorageDriver;
 
-  constructor(storage: Storage) {
+  constructor(storage: StorageDriver) {
     this.storage = storage;
   }
 
