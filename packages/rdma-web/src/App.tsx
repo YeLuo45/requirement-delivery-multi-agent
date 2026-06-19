@@ -10,13 +10,19 @@
  *   1. Live API at /api/proposals (served by Vite middleware in dev/preview)
  *   2. Fallback to /demo-data/proposals.json (shipped with the static build)
  *   3. Empty state with instructions to run the CLI
+ *
+ * Realtime:
+ *   The dashboard also opens a WebSocket to the @rdma/realtime bridge and
+ *   refetches the relevant list whenever a pipeline event arrives. The
+ *   connection state is shown in the header (green/grey dot).
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
 import { Overview } from './pages/Overview.js';
 import { Proposals } from './pages/Proposals.js';
 import { ProposalDetail } from './pages/ProposalDetail.js';
+import { useRealtime, defaultRealtimeUrl } from './use-realtime.js';
 
 export function App() {
   return (
@@ -27,6 +33,7 @@ export function App() {
           <Link to="/">Overview</Link>
           <Link to="/proposals">Proposals</Link>
         </nav>
+        <RealtimeIndicator />
       </header>
       <main>
         <Routes>
@@ -50,6 +57,19 @@ export function App() {
   );
 }
 
+function RealtimeIndicator() {
+  // Just a passive indicator — no-op callback keeps the WS connection alive
+  // so users see when the bridge is reachable.
+  const { status } = useRealtime({ url: defaultRealtimeUrl(), onEvent: () => undefined });
+  const label = status === 'open' ? 'live' : status === 'connecting' ? '…' : 'offline';
+  return (
+    <span className={`realtime realtime-${status}`} title={`Realtime bridge: ${status}`}>
+      <span className="dot" />
+      {label}
+    </span>
+  );
+}
+
 /** Fetch with fallback to the static demo dataset. */
 async function fetchWithFallback<T>(primary: string, fallback: string): Promise<{
   data: T;
@@ -70,10 +90,18 @@ async function fetchWithFallback<T>(primary: string, fallback: string): Promise<
   return { data, source: 'demo' };
 }
 
+/**
+ * Hook used by every page that shows proposal data. The first render
+ * fetches once; subsequent realtime events (proposal.created/updated,
+ * stage.transitioned, audit.appended) trigger a refetch so the UI
+ * stays in sync with the running pipeline.
+ */
 export function useProposals() {
   const [proposals, setProposals] = useState<unknown[] | null>(null);
   const [source, setSource] = useState<'live' | 'demo' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
   useEffect(() => {
     fetchWithFallback<unknown[]>('/api/proposals', '/demo-data/proposals.json')
       .then(({ data, source }) => {
@@ -81,7 +109,11 @@ export function useProposals() {
         setSource(source);
       })
       .catch((err) => setError(String(err)));
-  }, []);
+  }, [reloadKey]);
+
+  const onRealtimeEvent = useCallback(() => setReloadKey((k) => k + 1), []);
+  useRealtime({ url: defaultRealtimeUrl(), onEvent: onRealtimeEvent });
+
   return { proposals, source, error };
 }
 
@@ -89,6 +121,8 @@ export function useProposalDetail(id: string | undefined) {
   const [data, setData] = useState<unknown | null>(null);
   const [source, setSource] = useState<'live' | 'demo' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
   useEffect(() => {
     if (!id) return;
     fetchWithFallback<unknown>(
@@ -100,6 +134,15 @@ export function useProposalDetail(id: string | undefined) {
         setSource(source);
       })
       .catch((err) => setError(String(err)));
-  }, [id]);
+  }, [id, reloadKey]);
+
+  const onRealtimeEvent = useCallback(
+    (e: { proposalId: string }) => {
+      if (e.proposalId === id) setReloadKey((k) => k + 1);
+    },
+    [id],
+  );
+  useRealtime({ url: defaultRealtimeUrl(), onEvent: onRealtimeEvent });
+
   return { data, source, error };
 }
