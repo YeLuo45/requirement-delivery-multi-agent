@@ -239,8 +239,9 @@ git push -u origin feature/rdma-A1-llm-provider
 | 9 | B4-B5 | EventBus 集成 + WS server/client | 74/74 | ~700 | b28aea5 |
 | 10 | B6 | web 接入 WS + 实时 indicator | 74/74 | ~190 | cd0f243 |
 | 11 | B7 | perf bench + index 修 | 78/78 | ~225 | 0e2921b |
+| 12 | B8 | `rdma serve` daemon (HTTP + WS) | 84/84 | ~530 | 9c2b1fa |
 
-> 实测当前完整 78/78 tests passing（27 core + 6 e2e + 2 e2e-llm + 7 pm + 7 dev + 8 qa + 8 research + 14 persistence + 7 realtime + 5 bench = 89，最后包含 1 个 skip = 78 实际 active）。
+> 实测当前完整 84/84 tests passing（27 core + 6 e2e + 2 e2e-llm + 7 pm + 7 dev + 8 qa + 8 research + 14 persistence + 7 realtime + 5 bench + 6 serve）。
 
 ### B 方向性能数字
 
