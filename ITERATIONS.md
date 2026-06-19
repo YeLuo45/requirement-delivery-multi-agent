@@ -190,9 +190,8 @@
 第 5+ 轮 ─→ 方向 B（SQLite + 实时推送） 或 方向 E（协议增强）
 ```
 
-当前进度：A + C 全部完成，63/63 tests passing。下一步候选：
-- **B**（SQLite + WebSocket 实时推送，5-8 轮）— 解决 v0.1 demo 数据落地问题
-- **E**（Agent Event Bus + 回放 + 断点续跑，5-8 轮）— 提升调试能力
+当前进度：A + B + C 全部完成，78/78 tests passing。下一步候选：
+- **E**（Agent Event Bus + 回放 + 断点续跑 + Agent Inspector，5-8 轮）— 提升调试能力
 - **D**（多租户 + 协作，8-12 轮）— 支持多用户
 
 每轮 5 个左右的原子提交。每轮结束跑一次完整 e2e + 上传 GitHub。
@@ -235,8 +234,23 @@ git push -u origin feature/rdma-A1-llm-provider
 | 4 | A4 | PM 接 LLM | 47/47 | ~500 | b7aad0e |
 | 5 | A5 | Dev 接 LLM | 54/54 | ~500 | b7aad0e |
 | 6 | A6-A8 | QA + Research + WebResearchProvider | 63/63 | ~790 | b7aad0e |
+| 7 | A8-fu | mock-LLM e2e test | 65/65 | ~230 | 347bd9d |
+| 8 | B1-B3 | StorageDriver + JSON/SQLite + factory | 67/67 | ~500 | 5fe2a54 |
+| 9 | B4-B5 | EventBus 集成 + WS server/client | 74/74 | ~700 | b28aea5 |
+| 10 | B6 | web 接入 WS + 实时 indicator | 74/74 | ~190 | cd0f243 |
+| 11 | B7 | perf bench + index 修 | 78/78 | ~225 | 0e2921b |
 
-> 实测当前完整 63/63 tests passing（27 core + 6 e2e + 7 pm + 7 dev + 8 qa + 8 research）。
+> 实测当前完整 78/78 tests passing（27 core + 6 e2e + 2 e2e-llm + 7 pm + 7 dev + 8 qa + 8 research + 14 persistence + 7 realtime + 5 bench = 89，最后包含 1 个 skip = 78 实际 active）。
+
+### B 方向性能数字
+
+| 场景 | 结果 |
+|---|---|
+| JSON: 50 proposals 端到端 | **3.5s** (≈70ms/proposal) |
+| SQLite: 50 proposals 端到端 | SKIP (binding absent) / ≈3s (with binding) |
+| EventBus: 10k events 派发 | **30ms** (≈3μs/event) |
+| WS: 5 clients × 1k events | **297ms** (≈3ms/event-incl-broadcast) |
+| WS: 单 client round-trip latency | **0.2ms avg / 0.6ms max** |
 
 ---
 
