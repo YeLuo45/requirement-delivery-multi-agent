@@ -175,20 +175,25 @@
 ## 推荐推进顺序
 
 ```
-第 1 轮 ──→ 方向 C（Vite build 修复 + GitHub Pages 部署）  ← 最快出可见成果
+第 1 轮 ──→ 方向 C（Vite build 修复 + GitHub Pages 部署）  ← ✅ 已完成 (5c38c0d)
    │
    ▼
-第 2 轮 ──→ 方向 A1-A3（LLM Provider 抽象 + Anthropic + OpenAI）
+第 2 轮 ──→ 方向 A1-A3（LLM Provider 抽象 + Anthropic + OpenAI）  ← ✅ 已完成 (031f7df)
    │
    ▼
-第 3 轮 ──→ 方向 A4-A5（PM + Dev 接 LLM）
+第 3 轮 ──→ 方向 A4-A5（PM + Dev 接 LLM）  ← ✅ 已完成 (b7aad0e)
    │
    ▼
-第 4 轮 ──→ 方向 A6-A8（QA + Research + 真实链路测试）
+第 4 轮 ──→ 方向 A6-A8（QA + Research + 真实链路测试）  ← ✅ 已完成 (b7aad0e)
    │
    ▼
 第 5+ 轮 ─→ 方向 B（SQLite + 实时推送） 或 方向 E（协议增强）
 ```
+
+当前进度：A + C 全部完成，63/63 tests passing。下一步候选：
+- **B**（SQLite + WebSocket 实时推送，5-8 轮）— 解决 v0.1 demo 数据落地问题
+- **E**（Agent Event Bus + 回放 + 断点续跑，5-8 轮）— 提升调试能力
+- **D**（多租户 + 协作，8-12 轮）— 支持多用户
 
 每轮 5 个左右的原子提交。每轮结束跑一次完整 e2e + 上传 GitHub。
 
