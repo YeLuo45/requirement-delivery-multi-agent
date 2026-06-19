@@ -9,6 +9,7 @@
  *   rdma status                                              show system status
  *   rdma reset                                               wipe local storage
  *   rdma demo                                                run the bootstrap demo
+ *   rdma serve [--port N] [--host IP] [--storage json|sqlite] start a long-running daemon
  *   rdma help                                                this help
  */
 
@@ -56,6 +57,9 @@ async function main(): Promise<void> {
     case 'demo':
       await run('demo', args.slice(1));
       return;
+    case 'serve':
+      await run('serve', args.slice(1));
+      return;
     default:
       console.error(`Unknown command: ${cmd}`);
       console.error('Run `rdma help` for usage.');
@@ -87,6 +91,20 @@ Usage:
   rdma demo
       Run the bootstrap demo (creates and delivers 3 sample proposals).
 
+  rdma serve [--port 47555] [--host 127.0.0.1] [--storage json|sqlite] [--use-llm]
+      Start a long-running daemon. Exposes:
+        GET  /health              liveness probe
+        GET  /proposals           list summaries
+        GET  /proposals/:id       one proposal + handoff chain
+        POST /deliver {title,requirement[,sourceUrl]}
+                                 run a new proposal (async by default;
+                                 append ?wait=1 to block until delivered)
+        GET  /ws                  WebSocket — events fan out as the
+                                 pipeline runs (use with the web
+                                 dashboard or any @rdma/realtime client)
+      Default storage is json. Use --storage sqlite to switch the
+      daemon's backend at boot.
+
   rdma help
       This help.
 
@@ -95,6 +113,7 @@ Examples:
   rdma list
   rdma show P-20260619-001
   rdma status
+  rdma serve --port 47555
 `);
 }
 

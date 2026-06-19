@@ -23,6 +23,9 @@ import { createPmAgent } from '@rdma/pm';
 import { createDevAgent } from '@rdma/dev';
 import { createQaAgent } from '@rdma/qa';
 import { createBossAgent } from '@rdma/boss';
+import { EventBus } from '@rdma/persistence';
+
+import { cmdServe, startServe } from './serve.js';
 
 function findMonorepoRoot(startDir: string): string | null {
   // Walk up looking for a package.json that declares "workspaces".
@@ -71,6 +74,7 @@ export interface BuildDeps {
   storage: StorageDriver;
   audit: AuditLog;
   pipeline: Pipeline;
+  bus: EventBus;
 }
 
 /**
@@ -113,6 +117,7 @@ export async function buildDeps(
     opts.storage ?? 'json',
   );
   const audit = new AuditLog(storage);
+  const bus = new EventBus();
   const registry = new AgentRegistry();
   registry.register(createResearchAgent());
   registry.register(createCoordinatorAgent());
@@ -146,8 +151,8 @@ export async function buildDeps(
   registry.register(
     createBossAgent({ shippedRoot: SHIPPED_ROOT }),
   );
-  const pipeline = new Pipeline({ registry, storage, audit });
-  return { registry, storage, audit, pipeline };
+  const pipeline = new Pipeline({ registry, storage, audit, bus });
+  return { registry, storage, audit, pipeline, bus };
 }
 
 interface ParsedFlags {
@@ -393,6 +398,8 @@ export async function run(command: string, argv: string[]): Promise<void> {
       return cmdReset(argv);
     case 'demo':
       return cmdDemo(argv);
+    case 'serve':
+      return cmdServe(argv);
     default:
       console.error(`Unknown command: ${command}`);
       process.exit(1);
