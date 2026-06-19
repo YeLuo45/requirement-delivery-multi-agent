@@ -278,4 +278,39 @@ export class Pipeline {
     }
     throw new Error(`Pipeline exceeded ${maxSteps} steps for proposal ${proposal.id}`);
   }
+
+  /**
+   * Resume a previously-paused proposal from a specific stage.
+   *
+   * Loads the proposal from storage, rewinds its status to `stage`,
+   * records a `pipeline.resumed` audit entry, then drives the pipeline
+   * forward to completion. Artifacts already collected are preserved;
+   * only the status field is rewritten (so the next `step()` call picks
+   * up from the requested stage).
+   *
+   * If the proposal is already `delivered`, returns it unchanged.
+   */
+  async resumeFromStage(proposalId: string, stage: import('@rdma/core').Stage): Promise<Proposal> {
+    const existing = await this.storage.getProposal(proposalId);
+    if (existing.status === 'delivered') {
+      return existing;
+    }
+    const fromStage = existing.status;
+    const rewound: Proposal = {
+      ...existing,
+      status: stage,
+      updatedAt: new Date().toISOString(),
+    };
+    await this.storage.saveProposal(rewound);
+    this.emit('proposal.updated', rewound, { status: rewound.status, resumedFrom: fromStage });
+    await this.audit.record({
+      proposalId: rewound.id,
+      projectId: rewound.projectId,
+      actor: 'pipeline',
+      action: 'pipeline.resumed',
+      detail: { from: fromStage, to: stage },
+    });
+    this.emit('audit.appended', rewound, { stage, kind: 'pipeline.resumed', from: fromStage, to: stage });
+    return this.runToCompletion(rewound);
+  }
 }
