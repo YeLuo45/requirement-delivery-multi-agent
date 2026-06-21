@@ -25,10 +25,26 @@ import { createPmAgent } from '@rdma/pm';
 import { createQaAgent } from '@rdma/qa';
 import { createResearchAgent } from '@rdma/research';
 
+import { buildArtifactPatch, cmdDiff, diffInspectData, lineDiff, unifiedDiff } from './diff.js';
+import { buildEventsData, buildInspectData, cmdEvents, cmdInspect } from './inspect.js';
+import { cmdMetrics, parseMetricsArgs, renderMetricsText } from './metrics.js';
+import { cmdReplay, replayProposal } from './replay.js';
 import { cmdServe, startServe } from './serve.js';
-export { cmdInspect, cmdEvents, buildInspectData, buildEventsData } from './inspect.js';
-export { cmdDiff, diffInspectData, lineDiff, unifiedDiff, buildArtifactPatch } from './diff.js';
 export { cmdReplay, replayProposal } from './replay.js';
+export {
+  cmdDiff,
+  diffInspectData,
+  lineDiff,
+  unifiedDiff,
+  buildArtifactPatch,
+} from './diff.js';
+export { cmdInspect, cmdEvents, buildInspectData, buildEventsData } from './inspect.js';
+export { parseMetricsArgs, renderMetricsText } from './metrics.js';
+
+// `cmdServe` and `startServe` are imported for the dispatch switch
+// and for tests that exercise them through `runFn`. The other names
+// are re-exported so existing consumers of `@rdma/cli/run` keep
+// working.
 
 function findMonorepoRoot(startDir: string): string | null {
   // Walk up looking for a package.json that declares "workspaces".
@@ -408,6 +424,8 @@ export async function run(command: string, argv: string[]): Promise<void> {
       return cmdDiff(argv);
     case 'replay':
       return cmdReplay(argv);
+    case 'metrics':
+      return cmdMetrics(argv);
     default:
       console.error(`Unknown command: ${command}`);
       process.exit(1);

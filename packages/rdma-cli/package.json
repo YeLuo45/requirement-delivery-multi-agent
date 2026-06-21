@@ -17,15 +17,16 @@
     "rdma": "node --import tsx src/cli.ts"
   },
   "dependencies": {
+    "@rdma/boss": "*",
     "@rdma/core": "*",
     "@rdma/coordinator": "*",
-    "@rdma/research": "*",
     "@rdma/designer": "*",
-    "@rdma/pm": "*",
     "@rdma/dev": "*",
+    "@rdma/observability": "*",
+    "@rdma/persistence": "*",
+    "@rdma/pm": "*",
     "@rdma/qa": "*",
-    "@rdma/boss": "*",
-    "@rdma/llm": "*",
+    "@rdma/research": "*",
     "tsx": "^4.19.2"
   }
 }

@@ -113,6 +113,9 @@ export async function main(
     case 'serve':
     case 'inspect':
     case 'events':
+    case 'diff':
+    case 'replay':
+    case 'metrics':
       await runFn(cmd, args.slice(1));
       return 0;
     default: {
