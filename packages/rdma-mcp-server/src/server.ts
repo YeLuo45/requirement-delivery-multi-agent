@@ -21,7 +21,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createBossAgent } from '@rdma/boss';
-import { buildDeps } from '@rdma/cli/run';
+import { buildAgentProvider } from '@rdma/cli/agent-provider';
+import { loadAgentConfig } from '@rdma/config';
 import { Pipeline, createCoordinatorAgent } from '@rdma/coordinator';
 import { AgentRegistry, AuditLog, Storage } from '@rdma/core';
 import { createDesignerAgent } from '@rdma/designer';
@@ -44,6 +45,13 @@ export interface BuildServerOptions {
    * `RDMA_SHIPPED_ROOT` at call time.
    */
   shippedRoot?: string;
+  /**
+   * Wire each agent's LLM provider from `.rdma/agents.yaml` +
+   * `.rdma/agents/<id>/{soul,user,memory}.md`. When `false` (the
+   * default) every agent stays in mock mode — the historical
+   * behaviour we still want for tests and offline environments.
+   */
+  useLlm?: boolean;
 }
 
 export function buildServer(opts: BuildServerOptions = {}): McpServer {
@@ -52,6 +60,7 @@ export function buildServer(opts: BuildServerOptions = {}): McpServer {
     version: '0.1.0',
   });
 
+  const useLlm = opts.useLlm ?? false;
   // The tool callbacks always resolve storageRoot + shippedRoot lazily so
   // tests can change process.env between calls without re-importing.
   const resolveStorage = (): string => opts.storageRoot ?? process.env.RDMA_STORAGE_ROOT ?? '';
@@ -75,9 +84,38 @@ export function buildServer(opts: BuildServerOptions = {}): McpServer {
     registry.register(createResearchAgent());
     registry.register(createCoordinatorAgent());
     registry.register(createDesignerAgent());
-    registry.register(createPmAgent());
-    registry.register(createDevAgent());
-    registry.register(createQaAgent());
+
+    if (useLlm) {
+      // Read the per-agent config (the .rdma/agents.yaml + markdown
+      // bundle lives next to the storage root). When the file is
+      // missing or malformed we want the tool to fail loudly so
+      // operators notice — that's why we propagate the error rather
+      // than swallow it.
+      const configRoot = process.env.RDMA_CONFIG_ROOT ?? root.replace(/\/data$/, '');
+      const agentConfigs = await loadAgentConfig({ root: configRoot });
+      const pmModel = await buildAgentProvider(
+        { env: process.env, quiet: false },
+        'pm',
+        agentConfigs.pm?.llm ?? null,
+      );
+      const devModel = await buildAgentProvider(
+        { env: process.env, quiet: false },
+        'dev',
+        agentConfigs.dev?.llm ?? null,
+      );
+      const qaModel = await buildAgentProvider(
+        { env: process.env, quiet: false },
+        'qa',
+        agentConfigs.qa?.llm ?? null,
+      );
+      registry.register(createPmAgent({ model: pmModel, prompts: agentConfigs.pm?.prompts }));
+      registry.register(createDevAgent({ model: devModel, prompts: agentConfigs.dev?.prompts }));
+      registry.register(createQaAgent({ model: qaModel, prompts: agentConfigs.qa?.prompts }));
+    } else {
+      registry.register(createPmAgent());
+      registry.register(createDevAgent());
+      registry.register(createQaAgent());
+    }
     registry.register(createBossAgent({ shippedRoot: ship }));
     const pipeline = new Pipeline({ registry, storage: jsonStore, audit, bus });
     return { storage: jsonStore, audit, pipeline, bus, shippedRoot: ship };

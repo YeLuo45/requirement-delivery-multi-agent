@@ -14,6 +14,8 @@
  *   in_dev       → in_test_acceptance (impl done, hand to QA)
  */
 
+import type { AgentPromptBundle } from '@rdma/config';
+import { composeSystemPrompt, resolveUserPrompt } from '@rdma/config';
 import type { Agent, AgentContext, AgentId, AgentResult, Stage } from '@rdma/core';
 import type { LlmProvider } from '@rdma/llm';
 
@@ -85,31 +87,32 @@ function renderImplementation(p: import('@rdma/core').Proposal): string {
 async function renderTestPlanViaLlm(
   p: import('@rdma/core').Proposal,
   model: LlmProvider,
+  prompts?: AgentPromptBundle,
 ): Promise<string> {
+  const systemPrompt = composeSystemPrompt(
+    'You write Node.js test suites using the node:test runner. ' +
+      'Prefer clear, isolated test cases. Each `it()` should test one ' +
+      'behavior. Use describe/it blocks with TypeScript types where helpful.',
+    prompts,
+  );
+  const structuredUser = [
+    `Title: ${p.title}`,
+    `Requirement: ${p.rawRequirement}`,
+    '',
+    'Produce a Markdown test plan with these sections:',
+    '# Test plan: <title>',
+    '## Cases (must fail before implementation)',
+    '```ts',
+    'describe(...); it(...);',
+    '```',
+    '## Acceptance gate',
+  ].join('\n');
+  const userPrompt = resolveUserPrompt(prompts) ?? structuredUser;
+
   const result = await model.complete({
     messages: [
-      {
-        role: 'system',
-        content:
-          'You write Node.js test suites using the node:test runner. ' +
-          'Prefer clear, isolated test cases. Each `it()` should test one ' +
-          'behavior. Use describe/it blocks with TypeScript types where helpful.',
-      },
-      {
-        role: 'user',
-        content: [
-          `Title: ${p.title}`,
-          `Requirement: ${p.rawRequirement}`,
-          '',
-          'Produce a Markdown test plan with these sections:',
-          '# Test plan: <title>',
-          '## Cases (must fail before implementation)',
-          '```ts',
-          'describe(...); it(...);',
-          '```',
-          '## Acceptance gate',
-        ].join('\n'),
-      },
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
     ],
     maxTokens: 1200,
     temperature: 0.3,
@@ -121,28 +124,29 @@ async function renderTestPlanViaLlm(
 async function renderImplementationViaLlm(
   p: import('@rdma/core').Proposal,
   model: LlmProvider,
+  prompts?: AgentPromptBundle,
 ): Promise<string> {
+  const systemPrompt = composeSystemPrompt(
+    'You are a senior TypeScript engineer. Produce a minimal, runnable ' +
+      'implementation sketch that satisfies the test plan. Prefer small, ' +
+      'pure functions. Wrap code in ```ts fences. Keep it under 60 lines.',
+    prompts,
+  );
+  const structuredUser = [
+    `Title: ${p.title}`,
+    `Requirement: ${p.rawRequirement}`,
+    '',
+    'Produce a Markdown implementation note with these sections:',
+    '# Implementation: <title>',
+    '## Plan',
+    '## Code (sketch)',
+  ].join('\n');
+  const userPrompt = resolveUserPrompt(prompts) ?? structuredUser;
+
   const result = await model.complete({
     messages: [
-      {
-        role: 'system',
-        content:
-          'You are a senior TypeScript engineer. Produce a minimal, runnable ' +
-          'implementation sketch that satisfies the test plan. Prefer small, ' +
-          'pure functions. Wrap code in ```ts fences. Keep it under 60 lines.',
-      },
-      {
-        role: 'user',
-        content: [
-          `Title: ${p.title}`,
-          `Requirement: ${p.rawRequirement}`,
-          '',
-          'Produce a Markdown implementation note with these sections:',
-          '# Implementation: <title>',
-          '## Plan',
-          '## Code (sketch)',
-        ].join('\n'),
-      },
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
     ],
     maxTokens: 1500,
     temperature: 0.3,
@@ -154,10 +158,13 @@ async function renderImplementationViaLlm(
 export interface DevAgentConfig {
   /** Optional LLM provider. When omitted, falls back to deterministic rendering. */
   model?: LlmProvider;
+  /** Optional prompt bundle sourced from `.rdma/agents/dev/{soul,user,memory}.md`. */
+  prompts?: AgentPromptBundle;
 }
 
 export function createDevAgent(config: DevAgentConfig = {}): Agent {
   const model = config.model;
+  const prompts = config.prompts;
 
   return {
     id: DEV_ID,
@@ -167,7 +174,7 @@ export function createDevAgent(config: DevAgentConfig = {}): Agent {
       const p = ctx.proposal;
 
       if (p.status === 'in_tdd_test') {
-        const content = model ? await renderTestPlanViaLlm(p, model) : renderTestPlan(p);
+        const content = model ? await renderTestPlanViaLlm(p, model, prompts) : renderTestPlan(p);
         return {
           kind: 'transition',
           nextStage: 'in_dev',
@@ -183,7 +190,7 @@ export function createDevAgent(config: DevAgentConfig = {}): Agent {
 
       if (p.status === 'in_dev') {
         const content = model
-          ? await renderImplementationViaLlm(p, model)
+          ? await renderImplementationViaLlm(p, model, prompts)
           : renderImplementation(p);
         return {
           kind: 'handoff',

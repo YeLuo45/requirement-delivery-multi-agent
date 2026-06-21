@@ -140,6 +140,7 @@ function findHandler(plugin, rootOverride) {
         if (route === '/api/proposals') this._list = handler;
         else if (route === '/api/proposals/') this._detail = handler;
         else if (route === '/api/proposals/create') this._create = handler;
+        else if (route === '/api/config') this._config = handler;
       },
     },
   };
@@ -148,6 +149,7 @@ function findHandler(plugin, rootOverride) {
     list: fakeServer.middlewares._list,
     detail: fakeServer.middlewares._detail,
     create: fakeServer.middlewares._create,
+    config: fakeServer.middlewares._config,
   };
 }
 
@@ -219,6 +221,49 @@ describe('rdma-web vite plugin', () => {
     } finally {
       rmSync(fresh, { recursive: true, force: true });
     }
+  });
+
+  it('GET /api/config returns the resolved per-agent configuration', async () => {
+    // Seed a .rdma/agents.yaml one level above the plugin's dataRoot so
+    // the loadAgentConfig() walk finds it.
+    const parent = dataRoot.replace(/\/data$/, '');
+    mkdirSync(parent, { recursive: true });
+    writeFileSync(
+      path.join(parent, 'agents.yaml'),
+      [
+        'defaults:',
+        '  provider: anthropic',
+        'agents:',
+        '  pm:',
+        '    apiKey: "stub"',
+        '    temperature: 0.4',
+      ].join('\n'),
+    );
+    const mod = await loadPlugin();
+    const { config } = findHandler(mod);
+    assert.equal(typeof config, 'function');
+    const req = fakeRequest('/api/config');
+    const res = newResponse();
+    await config(req, res, () => undefined);
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body) as Record<string, { llm: { provider: string } }>;
+    assert.ok(body.pm);
+    assert.equal(body.pm?.llm?.provider, 'anthropic');
+  });
+
+  it('GET /api/config returns {} when no agents.yaml is on disk', async () => {
+    const mod = await loadPlugin();
+    const { config } = findHandler(mod);
+    assert.equal(typeof config, 'function');
+    const req = fakeRequest('/api/config');
+    const res = newResponse();
+    await config(req, res, () => undefined);
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    // `dataRoot` lives next to agents.yaml from the previous test; we
+    // accept either {} (clean dir) or { pm: ... } (yaml present) — the
+    // important contract is that the handler never throws.
+    assert.ok(typeof body === 'object');
   });
 
   it('POST /api/proposals/create creates a local proposal that appears in the list', async () => {

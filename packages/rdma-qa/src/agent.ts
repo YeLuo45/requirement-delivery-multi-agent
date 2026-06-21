@@ -16,6 +16,8 @@
  *   test_failed        → in_test_acceptance (re-test after fix)
  */
 
+import type { AgentPromptBundle } from '@rdma/config';
+import { composeSystemPrompt, resolveUserPrompt } from '@rdma/config';
 import {
   type Agent,
   type AgentContext,
@@ -35,6 +37,8 @@ export interface QaConfig {
   forceFailure?: boolean;
   /** Optional LLM provider. When provided, the LLM produces the verdict. */
   model?: LlmProvider;
+  /** Optional prompt bundle sourced from `.rdma/agents/qa/{soul,user,memory}.md`. */
+  prompts?: AgentPromptBundle;
 }
 
 function deterministicReport(
@@ -77,39 +81,40 @@ function extractVerdict(text: string): 'PASS' | 'FAIL' {
 async function renderReportViaLlm(
   p: import('@rdma/core').Proposal,
   model: LlmProvider,
+  prompts?: AgentPromptBundle,
 ): Promise<{ content: string; result: 'PASS' | 'FAIL' }> {
   const implementation = latestArtifact(p, 'implementation');
   const testPlan = latestArtifact(p, 'test_plan');
 
+  const systemPrompt = composeSystemPrompt(
+    'You are a QA engineer reviewing an implementation against its ' +
+      'test plan. Be strict. If anything is missing, FAIL. Produce a ' +
+      'Markdown report starting with "## Result: PASS" or "## Result: FAIL".',
+    prompts,
+  );
+  const structuredUser = [
+    `Title: ${p.title}`,
+    `Requirement: ${p.rawRequirement}`,
+    '',
+    '## Test plan',
+    testPlan?.content ?? '(no test plan attached)',
+    '',
+    '## Implementation',
+    implementation?.content ?? '(no implementation attached)',
+    '',
+    'Evaluate whether the implementation satisfies the test plan. ' +
+      'Output a Markdown report with sections:',
+    '## Result: <PASS|FAIL>',
+    '## Checks',
+    '(bullet list of checks with [x] or [ ])',
+    '## Summary',
+  ].join('\n');
+  const userPrompt = resolveUserPrompt(prompts) ?? structuredUser;
+
   const result = await model.complete({
     messages: [
-      {
-        role: 'system',
-        content:
-          'You are a QA engineer reviewing an implementation against its ' +
-          'test plan. Be strict. If anything is missing, FAIL. Produce a ' +
-          'Markdown report starting with "## Result: PASS" or "## Result: FAIL".',
-      },
-      {
-        role: 'user',
-        content: [
-          `Title: ${p.title}`,
-          `Requirement: ${p.rawRequirement}`,
-          '',
-          '## Test plan',
-          testPlan?.content ?? '(no test plan attached)',
-          '',
-          '## Implementation',
-          implementation?.content ?? '(no implementation attached)',
-          '',
-          'Evaluate whether the implementation satisfies the test plan. ' +
-            'Output a Markdown report with sections:',
-          '## Result: <PASS|FAIL>',
-          '## Checks',
-          '(bullet list of checks with [x] or [ ])',
-          '## Summary',
-        ].join('\n'),
-      },
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
     ],
     maxTokens: 1200,
     temperature: 0.2,
@@ -122,6 +127,7 @@ async function renderReportViaLlm(
 export function createQaAgent(config: QaConfig = {}): Agent {
   let forceFailure = config.forceFailure ?? false;
   const model = config.model;
+  const prompts = config.prompts;
 
   return {
     id: QA_ID,
@@ -147,7 +153,7 @@ export function createQaAgent(config: QaConfig = {}): Agent {
       let verdict: 'PASS' | 'FAIL';
 
       if (model) {
-        const r = await renderReportViaLlm(p, model);
+        const r = await renderReportViaLlm(p, model, prompts);
         content = r.content;
         verdict = r.result;
         // LLM verdict wins unless explicitly forced.

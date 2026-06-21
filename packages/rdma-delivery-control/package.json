@@ -1,0 +1,16 @@
+{
+  "name": "@rdma/delivery-control",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Delivery control plane for sandbox planning, collaboration access, tool policy, and cost routing.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "node --test --import tsx test/*.test.ts"
+  },
+  "dependencies": {
+    "@rdma/core": "*",
+    "tsx": "^4.19.2"
+  }
+}

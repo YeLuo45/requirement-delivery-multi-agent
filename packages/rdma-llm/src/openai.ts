@@ -22,6 +22,10 @@ export interface OpenAiConfig {
   baseUrl?: string;
   /** Max retries on transient errors. Default 3. */
   maxRetries?: number;
+  /** Provider-level temperature applied when the request omits one. */
+  defaultTemperature?: number;
+  /** Provider-level max_tokens applied when the request omits one. */
+  defaultMaxTokens?: number;
 }
 
 const DEFAULT_MODEL = 'gpt-4o';
@@ -51,6 +55,8 @@ export function createOpenAiProvider(config: OpenAiConfig): LlmProvider {
   const defaultModel = config.defaultModel ?? DEFAULT_MODEL;
   const fastModelId = config.fastModelId ?? DEFAULT_FAST;
   const maxRetries = config.maxRetries ?? 3;
+  const defaultTemperature = config.defaultTemperature;
+  const defaultMaxTokens = config.defaultMaxTokens;
 
   return {
     name: 'openai',
@@ -58,14 +64,16 @@ export function createOpenAiProvider(config: OpenAiConfig): LlmProvider {
     fastModel: () => fastModelId,
 
     async complete(request: CompletionRequest): Promise<CompletionResult> {
+      const temperature = request.temperature ?? defaultTemperature;
+      const maxTokens = request.maxTokens ?? defaultMaxTokens ?? 4096;
       const body: OpenAiRequest = {
         model: request.model ?? defaultModel,
-        max_tokens: request.maxTokens ?? 4096,
+        max_tokens: maxTokens,
         messages: request.messages.map((m) => ({
           role: m.role,
           content: m.content,
         })),
-        ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+        ...(temperature !== undefined ? { temperature } : {}),
         ...(request.stopSequences ? { stop: request.stopSequences } : {}),
       };
 

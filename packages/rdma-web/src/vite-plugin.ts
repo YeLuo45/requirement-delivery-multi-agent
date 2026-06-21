@@ -180,6 +180,21 @@ export function rdmaApiPlugin(dataRoot: string): Plugin {
         }
       });
 
+      server.middlewares.use('/api/config', async (_req, res) => {
+        try {
+          const { loadAgentConfig } = await import('@rdma/config');
+          // `dataRoot` is `.rdma/data`; agent config lives at `.rdma/`.
+          const configRoot = dataRoot.replace(/\/data$/, '');
+          const configs = await loadAgentConfig({ root: configRoot });
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(configs));
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+
       server.middlewares.use('/api/proposals', async (_req, res) => {
         try {
           const proposals: unknown[] = [];

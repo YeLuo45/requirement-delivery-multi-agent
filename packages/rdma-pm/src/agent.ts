@@ -15,6 +15,8 @@
  *     can parse it identically.
  */
 
+import type { AgentPromptBundle } from '@rdma/config';
+import { composeSystemPrompt, resolveUserPrompt } from '@rdma/config';
 import {
   type Agent,
   type AgentContext,
@@ -117,14 +119,20 @@ function extractSection(text: string, header: string): string {
  * we then re-format to match the deterministic shape so downstream parsers
  * don't care which mode produced the PRD.
  */
-async function renderPRDViaLlm(p: Proposal, model: LlmProvider): Promise<string> {
-  const systemPrompt =
+async function renderPRDViaLlm(
+  p: Proposal,
+  model: LlmProvider,
+  prompts?: AgentPromptBundle,
+): Promise<string> {
+  const systemPrompt = composeSystemPrompt(
     'You are a product manager writing a PRD for a small, single-developer ' +
-    'open-source tool. Be concise. Use Markdown sections exactly as specified. ' +
-    'Do not invent features beyond what the requirement asks for. ' +
-    'Keep the non-goals list short and honest.';
+      'open-source tool. Be concise. Use Markdown sections exactly as specified. ' +
+      'Do not invent features beyond what the requirement asks for. ' +
+      'Keep the non-goals list short and honest.',
+    prompts,
+  );
 
-  const userPrompt = [
+  const structuredUser = [
     `Title: ${p.title}`,
     `Requirement: ${p.rawRequirement}`,
     p.sourceUrl ? `Source: ${p.sourceUrl}` : '',
@@ -140,6 +148,7 @@ async function renderPRDViaLlm(p: Proposal, model: LlmProvider): Promise<string>
   ]
     .filter(Boolean)
     .join('\n');
+  const userPrompt = resolveUserPrompt(prompts) ?? structuredUser;
 
   const result = await model.complete({
     messages: [
@@ -192,13 +201,19 @@ async function renderPRDViaLlm(p: Proposal, model: LlmProvider): Promise<string>
 /**
  * Render implementation plan via LLM.
  */
-async function renderPlanViaLlm(p: Proposal, model: LlmProvider): Promise<string> {
-  const systemPrompt =
+async function renderPlanViaLlm(
+  p: Proposal,
+  model: LlmProvider,
+  prompts?: AgentPromptBundle,
+): Promise<string> {
+  const systemPrompt = composeSystemPrompt(
     'You are a senior engineer writing an implementation plan for a small ' +
-    'open-source tool. Be concrete. Use Markdown sections. Phases should be ' +
-    'ordered and each should have a clear exit criterion.';
+      'open-source tool. Be concrete. Use Markdown sections. Phases should be ' +
+      'ordered and each should have a clear exit criterion.',
+    prompts,
+  );
 
-  const userPrompt = [
+  const structuredUser = [
     `Title: ${p.title}`,
     `Requirement: ${p.rawRequirement}`,
     '',
@@ -207,6 +222,7 @@ async function renderPlanViaLlm(p: Proposal, model: LlmProvider): Promise<string
     '## Phases',
     '## Exit criteria',
   ].join('\n');
+  const userPrompt = resolveUserPrompt(prompts) ?? structuredUser;
 
   const result = await model.complete({
     messages: [
@@ -235,10 +251,13 @@ async function renderPlanViaLlm(p: Proposal, model: LlmProvider): Promise<string
 export interface PmAgentConfig {
   /** Optional LLM provider. When omitted, falls back to deterministic rendering. */
   model?: LlmProvider;
+  /** Optional prompt bundle sourced from `.rdma/agents/pm/{soul,user,memory}.md`. */
+  prompts?: AgentPromptBundle;
 }
 
 export function createPmAgent(config: PmAgentConfig = {}): Agent {
   const model = config.model;
+  const prompts = config.prompts;
 
   return {
     id: PM_ID,
@@ -255,7 +274,7 @@ export function createPmAgent(config: PmAgentConfig = {}): Agent {
               clarificationRound: 1,
               owner: PM_ID,
             };
-            const content = model ? await renderPRDViaLlm(next, model) : renderPRD(next);
+            const content = model ? await renderPRDViaLlm(next, model, prompts) : renderPRD(next);
             return {
               kind: 'transition',
               nextStage: 'prd_pending_confirmation',
@@ -284,7 +303,7 @@ export function createPmAgent(config: PmAgentConfig = {}): Agent {
         }
 
         case 'approved_for_dev': {
-          const content = model ? await renderPlanViaLlm(p, model) : renderPlan(p);
+          const content = model ? await renderPlanViaLlm(p, model, prompts) : renderPlan(p);
           return {
             kind: 'handoff',
             to: 'dev',

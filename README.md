@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](package.json)
-[![packages](https://img.shields.io/badge/packages-11-blue)](packages)
+[![packages](https://img.shields.io/badge/packages-17-blue)](packages)
 
 ## What is this?
 
@@ -104,7 +104,8 @@ requirement-delivery-multi-agent/
 │   ├── rdma-boss/         # final decision
 │   ├── rdma-mcp-server/   # MCP tool surface
 │   ├── rdma-cli/          # `rdma` CLI
-│   └── rdma-web/          # React + Vite dashboard
+│   ├── rdma-web/          # React + Vite dashboard
+│   └── rdma-delivery-control/ # sandbox, collaboration, tool policy, cost routing
 └── examples/
     └── hello-world/       # end-to-end example
 ```

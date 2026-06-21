@@ -11,6 +11,7 @@
  *   rdma demo                                                run the bootstrap demo
  *   rdma serve [--port N] [--host IP] [--storage json|sqlite] start a long-running daemon
  *   rdma tui [--once]                                        terminal proposal browser
+ *   rdma config show|validate|init|path                     per-agent configuration
  *   rdma inspect <proposal-id>                               show proposal handoff + audit timeline
  *   rdma events [--proposal <id>] [--limit N] [--since-seq M] stream audit-derived events
  *   rdma help                                                this help
@@ -77,6 +78,17 @@ Usage:
       Open a terminal UI for listing and creating local proposals.
       Use --once to print a non-interactive snapshot and exit.
 
+  rdma config <subcommand>
+      Manage the per-agent LLM + prompt configuration.
+      Subcommands:
+        show [--all] [<agent>]   print the resolved LLM config for one
+                                 or all agents
+        validate                 parse .rdma/agents.yaml and report
+                                 (exit 0 on success)
+        init [--force]           write a templated .rdma/agents.yaml
+                                 with pm / dev / qa stubs
+        path                     print the resolved .rdma root
+
   rdma inspect <proposal-id>
       Show the handoff chain, artifacts, and audit timeline of a proposal.
 
@@ -122,6 +134,7 @@ export async function main(
     case 'replay':
     case 'metrics':
     case 'tui':
+    case 'config':
       await runFn(cmd, args.slice(1));
       return 0;
     default: {

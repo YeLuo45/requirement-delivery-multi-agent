@@ -24,6 +24,10 @@ export interface AnthropicConfig {
   baseUrl?: string;
   /** Max retries on transient errors. Default 3. */
   maxRetries?: number;
+  /** Provider-level temperature applied when the request omits one. */
+  defaultTemperature?: number;
+  /** Provider-level max_tokens applied when the request omits one. */
+  defaultMaxTokens?: number;
 }
 
 const DEFAULT_MODEL = 'claude-3-5-sonnet-latest';
@@ -57,6 +61,8 @@ export function createAnthropicProvider(config: AnthropicConfig): LlmProvider {
   const defaultModel = config.defaultModel ?? DEFAULT_MODEL;
   const fastModelId = config.fastModelId ?? DEFAULT_FAST;
   const maxRetries = config.maxRetries ?? 3;
+  const defaultTemperature = config.defaultTemperature;
+  const defaultMaxTokens = config.defaultMaxTokens;
 
   return {
     name: 'anthropic',
@@ -74,15 +80,18 @@ export function createAnthropicProvider(config: AnthropicConfig): LlmProvider {
         );
       }
 
+      const temperature = request.temperature ?? defaultTemperature;
+      const maxTokens = request.maxTokens ?? defaultMaxTokens ?? 4096;
+
       const body: AnthropicRequest = {
         model: request.model ?? defaultModel,
-        max_tokens: request.maxTokens ?? 4096,
+        max_tokens: maxTokens,
         messages: conversationMessages.map((m) => ({
           role: m.role === 'user' ? 'user' : 'assistant',
           content: m.content,
         })),
         ...(systemMessages[0] ? { system: systemMessages[0].content } : {}),
-        ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+        ...(temperature !== undefined ? { temperature } : {}),
         ...(request.stopSequences ? { stop_sequences: request.stopSequences } : {}),
       };
 

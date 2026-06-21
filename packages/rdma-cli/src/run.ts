@@ -1,14 +1,7 @@
-/**
- * Command implementations — each takes parsed argv.
- *
- * Kept in a separate file so the CLI dispatcher stays small and the
- * command logic can be reused by the MCP server (which exposes the
- * same operations as tools).
- */
-
 import { promises as fs, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createBossAgent } from '@rdma/boss';
+import { type AgentRuntimeConfig, loadAgentConfig } from '@rdma/config';
 import { Pipeline, createCoordinatorAgent } from '@rdma/coordinator';
 import {
   AgentRegistry,
@@ -24,7 +17,15 @@ import { EventBus } from '@rdma/persistence';
 import { createPmAgent } from '@rdma/pm';
 import { createQaAgent } from '@rdma/qa';
 import { createResearchAgent } from '@rdma/research';
-
+/**
+ * Command implementations — each takes parsed argv.
+ *
+ * Kept in a separate file so the CLI dispatcher stays small and the
+ * command logic can be reused by the MCP server (which exposes the
+ * same operations as tools).
+ */
+import { buildAgentProvider } from './agent-provider.js';
+import { cmdConfigInit, cmdConfigPath, cmdConfigShow, cmdConfigValidate } from './config-cmd.js';
 import { buildArtifactPatch, cmdDiff, diffInspectData, lineDiff, unifiedDiff } from './diff.js';
 import { buildEventsData, buildInspectData, cmdEvents, cmdInspect } from './inspect.js';
 import { cmdMetrics, parseMetricsArgs, renderMetricsText } from './metrics.js';
@@ -140,25 +141,48 @@ export async function buildDeps(
   registry.register(createDevAgent());
 
   if (opts.useLlm) {
-    // Lazy import to avoid loading the LLM providers when not needed.
-    const { createAnthropicProvider } = await import('@rdma/llm/anthropic');
-    const { createOpenAiProvider } = await import('@rdma/llm/openai');
-    const model = process.env.ANTHROPIC_API_KEY
-      ? createAnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY })
-      : process.env.OPENAI_API_KEY
-        ? createOpenAiProvider({ apiKey: process.env.OPENAI_API_KEY })
+    // Per-agent LLM wiring. We try (in order):
+    //   1. `.rdma/agents.yaml` + `.rdma/agents/<id>/{soul,user,memory}.md`
+    //      — produced by `@rdma/config`.
+    //   2. The legacy env-var fallback that picks Anthropic/OpenAI based
+    //      on which API key is set.
+    // Both branches fall back to mock when nothing usable is configured.
+    const configRoot = path.dirname(storageRoot);
+    const agentConfigs = await loadAgentConfig({ root: configRoot });
+    const pmModel = await buildAgentProvider(
+      { env: process.env },
+      'pm',
+      agentConfigs.pm?.llm ?? null,
+    );
+    const devModel = await buildAgentProvider(
+      { env: process.env },
+      'dev',
+      agentConfigs.dev?.llm ?? null,
+    );
+    const qaModel = await buildAgentProvider(
+      { env: process.env },
+      'qa',
+      agentConfigs.qa?.llm ?? null,
+    );
+
+    // If per-agent config was silent, still try the legacy env-var trick
+    // so a `--use-llm` with no YAML on disk keeps working.
+    const legacyModel =
+      pmModel.name === 'mock' &&
+      devModel.name === 'mock' &&
+      qaModel.name === 'mock' &&
+      process.env.ANTHROPIC_API_KEY
+        ? await buildAgentProvider({ env: process.env }, 'pm', {
+            provider: 'anthropic',
+            apiKey: process.env.ANTHROPIC_API_KEY,
+          })
         : null;
-    if (model) {
-      registry.register(createPmAgent({ model }));
-      registry.register(createDevAgent({ model }));
-      registry.register(createQaAgent({ model }));
-      console.error(`[rdma] using LLM provider: ${model.name} (${model.defaultModel})`);
-    } else {
-      console.error(
-        '[rdma] --use-llm set but no ANTHROPIC_API_KEY / OPENAI_API_KEY; falling back to mock agents',
-      );
-      registry.register(createQaAgent());
-    }
+
+    const effectivePm = pmModel.name === 'mock' && legacyModel ? legacyModel : pmModel;
+    registry.register(createPmAgent({ model: effectivePm }));
+    registry.register(createDevAgent({ model: devModel }));
+    registry.register(createQaAgent({ model: qaModel }));
+    logLlmSummary(agentConfigs, { pm: effectivePm, dev: devModel, qa: qaModel });
   } else {
     registry.register(createQaAgent());
   }
@@ -166,6 +190,26 @@ export async function buildDeps(
   registry.register(createBossAgent({ shippedRoot: SHIPPED_ROOT }));
   const pipeline = new Pipeline({ registry, storage, audit, bus });
   return { registry, storage, audit, pipeline, bus };
+}
+
+interface AgentProviderSnapshot {
+  pm: import('@rdma/llm').LlmProvider;
+  dev: import('@rdma/llm').LlmProvider;
+  qa: import('@rdma/llm').LlmProvider;
+}
+
+function logLlmSummary(
+  agentConfigs: Record<string, AgentRuntimeConfig>,
+  providers: AgentProviderSnapshot,
+): void {
+  const labels: Array<keyof AgentProviderSnapshot> = ['pm', 'dev', 'qa'];
+  for (const id of labels) {
+    const cfg = agentConfigs[id];
+    const source = cfg?.source ?? 'default';
+    console.error(
+      `[rdma] ${id}: provider=${providers[id].name} (${providers[id].defaultModel}) source=${source}`,
+    );
+  }
 }
 
 interface ParsedFlags {
@@ -430,6 +474,28 @@ export async function run(command: string, argv: string[]): Promise<void> {
       return cmdMetrics(argv);
     case 'tui':
       return cmdTui(argv);
+    case 'config': {
+      // Dispatch the nested subcommand. argv[0] is one of
+      // `show | validate | init | path`. We re-slice and pass the tail.
+      const sub = argv[0];
+      const tail = argv.slice(1);
+      switch (sub) {
+        case 'show':
+          return cmdConfigShow(tail);
+        case 'validate':
+          return cmdConfigValidate(tail);
+        case 'init':
+          return cmdConfigInit(tail);
+        case 'path':
+          return cmdConfigPath(tail);
+        default:
+          console.error(
+            `Unknown config subcommand: ${sub ?? '(none)'} (expected show | validate | init | path)`,
+          );
+          process.exit(1);
+          return;
+      }
+    }
     default:
       console.error(`Unknown command: ${command}`);
       process.exit(1);

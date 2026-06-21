@@ -10,7 +10,8 @@
     "rdma": "./src/cli.ts"
   },
   "exports": {
-    "./run": "./src/run.ts"
+    "./run": "./src/run.ts",
+    "./agent-provider": "./src/agent-provider.ts"
   },
   "scripts": {
     "start": "node --import tsx src/cli.ts",
@@ -18,15 +19,17 @@
   },
   "dependencies": {
     "@rdma/boss": "*",
+    "@rdma/config": "*",
     "@rdma/core": "*",
     "@rdma/coordinator": "*",
     "@rdma/designer": "*",
     "@rdma/dev": "*",
+    "@rdma/llm": "*",
     "@rdma/observability": "*",
     "@rdma/persistence": "*",
     "@rdma/pm": "*",
     "@rdma/qa": "*",
     "@rdma/research": "*",
-    "tsx": "^4.19.2"
+    "@rdma/realtime": "*"
   }
 }
