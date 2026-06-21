@@ -12,7 +12,7 @@
   --red: #f85149;
   --purple: #bc8cff;
   --orange: #f0883e;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   color-scheme: dark;
 }
 
@@ -20,7 +20,9 @@
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
   padding: 0;
@@ -143,7 +145,8 @@ table {
   font-size: 14px;
 }
 
-th, td {
+th,
+td {
   padding: 10px 12px;
   text-align: left;
   border-bottom: 1px solid var(--border);
@@ -172,16 +175,56 @@ tr:hover {
   border: 1px solid var(--border);
 }
 
-.status-delivered { background: rgba(63, 185, 80, 0.15); color: var(--green); border-color: var(--green); }
-.status-deployed { background: rgba(63, 185, 80, 0.10); color: var(--green); }
-.status-accepted { background: rgba(63, 185, 80, 0.08); color: var(--green); }
-.status-in_dev, .status-in_tdd_test { background: rgba(88, 166, 255, 0.15); color: var(--accent); border-color: var(--accent); }
-.status-in_test_acceptance { background: rgba(188, 140, 255, 0.15); color: var(--purple); border-color: var(--purple); }
-.status-test_failed { background: rgba(248, 81, 73, 0.15); color: var(--red); border-color: var(--red); }
-.status-clarifying, .status-prd_pending_confirmation, .status-approved_for_dev { background: rgba(210, 153, 34, 0.15); color: var(--yellow); border-color: var(--yellow); }
-.status-research, .status-research_direction_pending { background: rgba(240, 136, 62, 0.15); color: var(--orange); border-color: var(--orange); }
-.status-intake { background: rgba(240, 136, 62, 0.10); color: var(--orange); }
-.status-ideation { background: rgba(240, 136, 62, 0.10); color: var(--orange); }
+.status-delivered {
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--green);
+  border-color: var(--green);
+}
+.status-deployed {
+  background: rgba(63, 185, 80, 0.1);
+  color: var(--green);
+}
+.status-accepted {
+  background: rgba(63, 185, 80, 0.08);
+  color: var(--green);
+}
+.status-in_dev,
+.status-in_tdd_test {
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.status-in_test_acceptance {
+  background: rgba(188, 140, 255, 0.15);
+  color: var(--purple);
+  border-color: var(--purple);
+}
+.status-test_failed {
+  background: rgba(248, 81, 73, 0.15);
+  color: var(--red);
+  border-color: var(--red);
+}
+.status-clarifying,
+.status-prd_pending_confirmation,
+.status-approved_for_dev {
+  background: rgba(210, 153, 34, 0.15);
+  color: var(--yellow);
+  border-color: var(--yellow);
+}
+.status-research,
+.status-research_direction_pending {
+  background: rgba(240, 136, 62, 0.15);
+  color: var(--orange);
+  border-color: var(--orange);
+}
+.status-intake {
+  background: rgba(240, 136, 62, 0.1);
+  color: var(--orange);
+}
+.status-ideation {
+  background: rgba(240, 136, 62, 0.1);
+  color: var(--orange);
+}
 
 .handoff-chain {
   display: flex;
@@ -225,7 +268,7 @@ tr:hover {
 }
 
 .artifact-content {
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 12px;
   background: var(--bg);
   padding: 12px;
@@ -241,7 +284,7 @@ tr:hover {
   font-size: 12px;
   color: var(--fg-muted);
   padding: 4px 0;
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 .audit-entry .actor {

@@ -20,15 +20,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
 import { Overview } from './pages/Overview.js';
-import { Proposals } from './pages/Proposals.js';
 import { ProposalDetail } from './pages/ProposalDetail.js';
-import { useRealtime, defaultRealtimeUrl } from './use-realtime.js';
+import { Proposals } from './pages/Proposals.js';
+import { defaultRealtimeUrl, useRealtime } from './use-realtime.js';
 
 export function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <Link to="/" className="brand">⚡ RDMA</Link>
+        <Link to="/" className="brand">
+          ⚡ RDMA
+        </Link>
         <nav>
           <Link to="/">Overview</Link>
           <Link to="/proposals">Proposals</Link>
@@ -71,7 +73,10 @@ function RealtimeIndicator() {
 }
 
 /** Fetch with fallback to the static demo dataset. */
-async function fetchWithFallback<T>(primary: string, fallback: string): Promise<{
+async function fetchWithFallback<T>(
+  primary: string,
+  fallback: string,
+): Promise<{
   data: T;
   source: 'live' | 'demo';
 }> {
@@ -103,6 +108,7 @@ export function useProposals() {
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    void reloadKey;
     fetchWithFallback<unknown[]>('/api/proposals', '/demo-data/proposals.json')
       .then(({ data, source }) => {
         setProposals(data);
@@ -124,11 +130,9 @@ export function useProposalDetail(id: string | undefined) {
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    void reloadKey;
     if (!id) return;
-    fetchWithFallback<unknown>(
-      `/api/proposals/${id}`,
-      `/demo-data/details/${id}.json`,
-    )
+    fetchWithFallback<unknown>(`/api/proposals/${id}`, `/demo-data/details/${id}.json`)
       .then(({ data, source }) => {
         setData(data);
         setSource(source);

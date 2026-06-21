@@ -11,6 +11,9 @@
  * Uses the browser's native WebSocket (no `ws` package in the browser
  * bundle). Protocol matches @rdma/realtime/src/server.ts.
  *
+ * Pure helpers (`parseRealtimeFrame`, `createRealtimeConnection`) live
+ * in `./realtime-core.ts` so they can be unit-tested without React.
+ *
  * Usage:
  *   const { status, lastEvent } = useRealtime({
  *     url: 'ws://127.0.0.1:47555',
@@ -19,6 +22,12 @@
  */
 
 import { useEffect, useState } from 'react';
+import {
+  type RealtimeConnection,
+  type RealtimeFrame,
+  createRealtimeConnection,
+  parseRealtimeFrame,
+} from './realtime-core.js';
 
 export type RealtimeStatus = 'connecting' | 'open' | 'closed';
 
@@ -49,82 +58,71 @@ export interface UseRealtimeResult {
 export function useRealtime(opts: UseRealtimeOptions): UseRealtimeResult {
   const [status, setStatus] = useState<RealtimeStatus>(opts.url ? 'connecting' : 'closed');
   const [lastEvent, setLastEvent] = useState<RealtimeEvent | null>(null);
+  const url = opts.url;
+  const kinds = opts.kinds;
+  const onEvent = opts.onEvent;
+  const reconnectMs = opts.reconnectMs;
 
   useEffect(() => {
-    if (!opts.url) {
+    if (!url) {
       setStatus('closed');
       return;
     }
     let alive = true;
-    let socket: WebSocket | null = null;
+    let connection: RealtimeConnection | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    function connect(): void {
+    const handle = (frame: RealtimeFrame): void => {
+      if (frame.type === 'event' && frame.event) {
+        setLastEvent(frame.event);
+        onEvent(frame.event);
+      }
+    };
+
+    const open = (): void => {
       if (!alive) return;
       try {
-        socket = new WebSocket(opts.url!);
+        connection = createRealtimeConnection({
+          url,
+          kinds: kinds ?? [],
+          onOpen: () => {
+            if (!alive) return;
+            setStatus('open');
+          },
+          onMessage: (raw) => {
+            if (!alive) return;
+            const frame = parseRealtimeFrame(raw);
+            if (frame) handle(frame);
+          },
+          onClose: () => {
+            if (!alive) return;
+            setStatus('closed');
+            scheduleReconnect();
+          },
+        });
       } catch {
         scheduleReconnect();
         return;
       }
       setStatus('connecting');
-      socket.onopen = () => {
-        if (!alive) return;
-        setStatus('open');
-        const kinds = opts.kinds ?? [];
-        socket?.send(JSON.stringify({ type: 'subscribe', kinds }));
-      };
-      socket.onmessage = (msg) => {
-        if (!alive) return;
-        try {
-          const parsed = JSON.parse(String(msg.data)) as unknown;
-          if (
-            parsed !== null &&
-            typeof parsed === 'object' &&
-            (parsed as { type?: string }).type === 'event'
-          ) {
-            const ev = (parsed as { event: RealtimeEvent }).event;
-            setLastEvent(ev);
-            opts.onEvent(ev);
-          }
-        } catch {
-          // ignore malformed frames
-        }
-      };
-      socket.onclose = () => {
-        if (!alive) return;
-        setStatus('closed');
-        scheduleReconnect();
-      };
-      socket.onerror = () => {
-        try {
-          socket?.close();
-        } catch {
-          // ignore
-        }
-      };
-    }
+    };
 
-    function scheduleReconnect(): void {
+    const scheduleReconnect = (): void => {
       if (!alive) return;
-      reconnectTimer = setTimeout(connect, opts.reconnectMs ?? 2000);
-    }
+      reconnectTimer = setTimeout(open, reconnectMs ?? 2000);
+    };
 
-    connect();
+    open();
     return () => {
       alive = false;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       try {
-        socket?.close();
+        connection?.close();
       } catch {
         // ignore
       }
     };
-    // We deliberately do not include `opts` in deps — consumers should
-    // wrap the callback in useCallback or the options object in useMemo
-    // if they need stable references.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.url]);
+  }, [url, kinds, onEvent, reconnectMs]);
 
   return { status, lastEvent };
 }

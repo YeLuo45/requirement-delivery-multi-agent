@@ -38,8 +38,8 @@ export function Overview() {
         <h2>Couldn't load proposals</h2>
         <p>{error}</p>
         <p>
-          The web dashboard reads from <code>.rdma/data/</code>. Make sure you've run the
-          CLI at least once:
+          The web dashboard reads from <code>.rdma/data/</code>. Make sure you've run the CLI at
+          least once:
         </p>
         <pre>npm run cli -- demo</pre>
       </div>
@@ -53,7 +53,7 @@ export function Overview() {
     counts[p.status] = (counts[p.status] ?? 0) + 1;
   }
 
-  const delivered = counts['delivered'] ?? 0;
+  const delivered = counts.delivered ?? 0;
   const inFlight = proposals.length - delivered;
 
   return (
@@ -65,11 +65,15 @@ export function Overview() {
         </div>
         <div className="stat">
           <div className="label">Delivered</div>
-          <div className="value" style={{ color: 'var(--green)' }}>{delivered}</div>
+          <div className="value" style={{ color: 'var(--green)' }}>
+            {delivered}
+          </div>
         </div>
         <div className="stat">
           <div className="label">In flight</div>
-          <div className="value" style={{ color: 'var(--accent)' }}>{inFlight}</div>
+          <div className="value" style={{ color: 'var(--accent)' }}>
+            {inFlight}
+          </div>
         </div>
         <div className="stat">
           <div className="label">Stages tracked</div>
@@ -81,8 +85,8 @@ export function Overview() {
         <h2>Pipeline distribution</h2>
         {Object.keys(counts).length === 0 ? (
           <p style={{ color: 'var(--fg-muted)' }}>
-            No proposals yet. Try <code>npm run cli -- demo</code> or
-            {' '}<code>npm run cli -- deliver "..." --requirement "..."</code>.
+            No proposals yet. Try <code>npm run cli -- demo</code> or{' '}
+            <code>npm run cli -- deliver "..." --requirement "..."</code>.
           </p>
         ) : (
           <table>

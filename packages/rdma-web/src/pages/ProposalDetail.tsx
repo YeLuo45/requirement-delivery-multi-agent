@@ -2,7 +2,7 @@
  * Proposal detail page — handoff chain, audit log, artifacts.
  */
 
-import { useParams, Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useProposalDetail } from '../App';
 
 interface Proposal {
@@ -84,9 +84,7 @@ export function ProposalDetail() {
       <div className="card">
         <h2>
           {p.title}{' '}
-          <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--fg-muted)' }}>
-            {p.id}
-          </span>
+          <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--fg-muted)' }}>{p.id}</span>
         </h2>
         <p style={{ color: 'var(--fg-muted)', fontSize: 14 }}>{p.rawRequirement}</p>
         <div
@@ -99,8 +97,7 @@ export function ProposalDetail() {
           }}
         >
           <span>
-            Status:{' '}
-            <span className={`status-badge status-${p.status}`}>{p.status}</span>
+            Status: <span className={`status-badge status-${p.status}`}>{p.status}</span>
           </span>
           <span style={{ color: 'var(--fg-muted)' }}>
             Project: <code>{p.projectId}</code>
@@ -127,13 +124,11 @@ export function ProposalDetail() {
         <div className="handoff-chain">
           {detail.handoffChain.map((agent, i) => (
             <span
-              key={i}
+              key={`${agent}-${detail.handoffChain.slice(0, i + 1).join('>')}`}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
             >
               <span className="agent">{agent}</span>
-              {i < detail.handoffChain.length - 1 && (
-                <span className="arrow">→</span>
-              )}
+              {i < detail.handoffChain.length - 1 && <span className="arrow">→</span>}
             </span>
           ))}
         </div>
@@ -145,8 +140,7 @@ export function ProposalDetail() {
           <div key={a.id} className="artifact">
             <div className="artifact-summary">{a.summary}</div>
             <div className="artifact-meta">
-              {a.kind} · {a.agentId} ·{' '}
-              {new Date(a.createdAt).toLocaleString()}
+              {a.kind} · {a.agentId} · {new Date(a.createdAt).toLocaleString()}
             </div>
             <div className="artifact-content">{a.content}</div>
           </div>
@@ -158,13 +152,9 @@ export function ProposalDetail() {
         {detail.audit.map((e) => (
           <div key={e.id} className="audit-entry">
             <span style={{ color: 'var(--fg-muted)' }}>{e.at}</span>{' '}
-            <span className="actor">{e.actor}</span>{' '}
-            <span className="action">{e.action}</span>
+            <span className="actor">{e.actor}</span> <span className="action">{e.action}</span>
             {Object.keys(e.detail).length > 0 && (
-              <span style={{ color: 'var(--fg-muted)' }}>
-                {' '}
-                · {JSON.stringify(e.detail)}
-              </span>
+              <span style={{ color: 'var(--fg-muted)' }}> · {JSON.stringify(e.detail)}</span>
             )}
           </div>
         ))}

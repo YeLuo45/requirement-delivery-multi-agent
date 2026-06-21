@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite';
 import { rdmaApiPlugin } from './src/vite-plugin';
 
 // RDMA data root — matches where the CLI writes proposals.
@@ -38,9 +38,8 @@ const dataRoot = monorepoRoot
 // - In dev mode (npm run dev), serve from "/" for hot reload to work.
 // - On GitHub Pages, the repo is at /<repo-name>/, so Vite needs base: '/<repo-name>/'.
 // We detect the deployment target via RDMA_DEPLOY_TARGET env var.
-const base = process.env['RDMA_DEPLOY_TARGET'] === 'github-pages'
-  ? '/requirement-delivery-multi-agent/'
-  : '/';
+const base =
+  process.env.RDMA_DEPLOY_TARGET === 'github-pages' ? '/requirement-delivery-multi-agent/' : '/';
 
 // https://vite.dev/config/
 export default defineConfig({
