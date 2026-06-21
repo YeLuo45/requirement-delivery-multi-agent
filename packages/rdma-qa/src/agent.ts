@@ -16,15 +16,19 @@
  *   test_failed        → in_test_acceptance (re-test after fix)
  */
 
-import { latestArtifact, type Agent, type AgentContext, type AgentId, type AgentResult, type Stage } from '@rdma/core';
+import {
+  type Agent,
+  type AgentContext,
+  type AgentId,
+  type AgentResult,
+  type Stage,
+  latestArtifact,
+} from '@rdma/core';
 import type { LlmProvider } from '@rdma/llm';
 
 export const QA_ID: AgentId = 'qa';
 
-export const QA_SCOPE: ReadonlyArray<Stage> = [
-  'in_test_acceptance',
-  'test_failed',
-];
+export const QA_SCOPE: ReadonlyArray<Stage> = ['in_test_acceptance', 'test_failed'];
 
 export interface QaConfig {
   /** Force a failure on the next call. Useful for exercising the rework loop in tests. */
@@ -48,7 +52,7 @@ function deterministicReport(
     '',
     `## Result: ${result}`,
     '',
-    `## Checks`,
+    '## Checks',
     `- [${shouldFail ? ' ' : 'x'}] Happy path test passes`,
     `- [${shouldFail ? ' ' : 'x'}] Empty input handled with clear error`,
     `- [${shouldFail ? ' ' : 'x'}] Edge cases from risk register covered`,
@@ -133,7 +137,8 @@ export function createQaAgent(config: QaConfig = {}): Agent {
         return {
           kind: 'handoff',
           to: 'dev',
-          reason: 'Re-running acceptance suite after dev fix (routing back to dev for re-implementation).',
+          reason:
+            'Re-running acceptance suite after dev fix (routing back to dev for re-implementation).',
         };
       }
 

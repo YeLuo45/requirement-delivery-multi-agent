@@ -16,13 +16,13 @@
  */
 
 import {
-  latestArtifact,
   type Agent,
   type AgentContext,
   type AgentId,
   type AgentResult,
   type Proposal,
   type Stage,
+  latestArtifact,
 } from '@rdma/core';
 import type { LlmProvider } from '@rdma/llm';
 
@@ -41,33 +41,33 @@ function renderPRD(p: Proposal): string {
   return [
     `# PRD: ${p.title}`,
     '',
-    `## Problem`,
+    '## Problem',
     `${p.rawRequirement}`,
     '',
-    `## Goals`,
-    `- Deliver a working artifact that solves the stated problem end-to-end.`,
-    `- Keep the implementation small enough to maintain without dedicated staff.`,
-    `- Ensure the artifact is testable and meets the acceptance criteria below.`,
+    '## Goals',
+    '- Deliver a working artifact that solves the stated problem end-to-end.',
+    '- Keep the implementation small enough to maintain without dedicated staff.',
+    '- Ensure the artifact is testable and meets the acceptance criteria below.',
     '',
-    `## Non-goals`,
-    `- Multi-tenant / multi-user support (out of scope for v1).`,
-    `- Production-grade observability (we ship a local-dev tool, not a SaaS).`,
+    '## Non-goals',
+    '- Multi-tenant / multi-user support (out of scope for v1).',
+    '- Production-grade observability (we ship a local-dev tool, not a SaaS).',
     '',
-    `## User stories`,
-    `- As a user, I can run the artifact with one command and get a useful result.`,
-    `- As a user, I see clear errors when my input is invalid.`,
-    `- As a maintainer, I can extend the artifact without rewriting the core.`,
+    '## User stories',
+    '- As a user, I can run the artifact with one command and get a useful result.',
+    '- As a user, I see clear errors when my input is invalid.',
+    '- As a maintainer, I can extend the artifact without rewriting the core.',
     '',
-    `## Acceptance criteria`,
-    `1. The artifact compiles cleanly from a fresh clone.`,
-    `2. A smoke test (provided in the implementation) passes.`,
-    `3. Edge cases listed in the risk register are handled (or explicitly rejected with a clear message).`,
-    `4. Documentation in README covers installation, usage, and one example.`,
+    '## Acceptance criteria',
+    '1. The artifact compiles cleanly from a fresh clone.',
+    '2. A smoke test (provided in the implementation) passes.',
+    '3. Edge cases listed in the risk register are handled (or explicitly rejected with a clear message).',
+    '4. Documentation in README covers installation, usage, and one example.',
     '',
-    `## Risks (from research brief)`,
+    '## Risks (from research brief)',
     brief ? 'See attached `requirement_brief` artifact.' : '_No research brief attached._',
     '',
-    `## Design`,
+    '## Design',
     design ? 'See attached `design_spec` artifact.' : '_No design spec attached (non-UI work)._',
   ].join('\n');
 }
@@ -76,18 +76,18 @@ function renderPlan(p: Proposal): string {
   return [
     `# Implementation Plan: ${p.title}`,
     '',
-    `## Phases`,
-    `1. **Setup** — repository scaffold, package manifest, test runner`,
-    `2. **TDD core** — write failing tests for the primary use case; make them pass`,
-    `3. **Edge cases** — extend tests to cover the risk register; fix as needed`,
-    `4. **CLI surface** — expose the core as a runnable command`,
-    `5. **Docs** — README, usage examples`,
-    `6. **Smoke test** — end-to-end run from clean clone`,
+    '## Phases',
+    '1. **Setup** — repository scaffold, package manifest, test runner',
+    '2. **TDD core** — write failing tests for the primary use case; make them pass',
+    '3. **Edge cases** — extend tests to cover the risk register; fix as needed',
+    '4. **CLI surface** — expose the core as a runnable command',
+    '5. **Docs** — README, usage examples',
+    '6. **Smoke test** — end-to-end run from clean clone',
     '',
-    `## Exit criteria`,
-    `- All tests pass`,
-    `- CLI runs with --help flag and one example invocation`,
-    `- README is complete`,
+    '## Exit criteria',
+    '- All tests pass',
+    '- CLI runs with --help flag and one example invocation',
+    '- README is complete',
   ].join('\n');
 }
 
@@ -101,7 +101,8 @@ function extractSection(text: string, header: string): string {
       if (line.toLowerCase().includes(header.toLowerCase())) {
         capturing = true;
         continue;
-      } else if (capturing) {
+      }
+      if (capturing) {
         break;
       }
     }
@@ -116,10 +117,7 @@ function extractSection(text: string, header: string): string {
  * we then re-format to match the deterministic shape so downstream parsers
  * don't care which mode produced the PRD.
  */
-async function renderPRDViaLlm(
-  p: Proposal,
-  model: LlmProvider,
-): Promise<string> {
+async function renderPRDViaLlm(p: Proposal, model: LlmProvider): Promise<string> {
   const systemPrompt =
     'You are a product manager writing a PRD for a small, single-developer ' +
     'open-source tool. Be concise. Use Markdown sections exactly as specified. ' +
@@ -167,26 +165,26 @@ async function renderPRDViaLlm(
   return [
     `# PRD: ${p.title}`,
     '',
-    `## Problem`,
+    '## Problem',
     problem,
     '',
-    `## Goals`,
+    '## Goals',
     goals || '- Deliver a working artifact that solves the stated problem end-to-end.',
     '',
-    `## Non-goals`,
+    '## Non-goals',
     nonGoals || '- Production-grade observability.\n- Multi-tenant support.',
     '',
-    `## User stories`,
+    '## User stories',
     userStories || '- As a user, I can run the artifact with one command.',
     '',
-    `## Acceptance criteria`,
+    '## Acceptance criteria',
     acceptance ||
       '1. The artifact compiles cleanly from a fresh clone.\n2. A smoke test passes.\n3. Edge cases are handled.',
     '',
-    `## Risks (from research brief)`,
+    '## Risks (from research brief)',
     brief ? 'See attached `requirement_brief` artifact.' : '_No research brief attached._',
     '',
-    `## Design`,
+    '## Design',
     design ? 'See attached `design_spec` artifact.' : '_No design spec attached (non-UI work)._',
   ].join('\n');
 }
@@ -225,12 +223,12 @@ async function renderPlanViaLlm(p: Proposal, model: LlmProvider): Promise<string
   return [
     `# Implementation Plan: ${p.title}`,
     '',
-    `## Phases`,
-    phases ||
-      '1. Setup\n2. TDD core\n3. Edge cases\n4. CLI surface\n5. Docs\n6. Smoke test',
+    '## Phases',
+    phases || '1. Setup\n2. TDD core\n3. Edge cases\n4. CLI surface\n5. Docs\n6. Smoke test',
     '',
-    `## Exit criteria`,
-    exitCriteria || '- All tests pass\n- CLI runs with --help and one example\n- README is complete',
+    '## Exit criteria',
+    exitCriteria ||
+      '- All tests pass\n- CLI runs with --help and one example\n- README is complete',
   ].join('\n');
 }
 
@@ -257,9 +255,7 @@ export function createPmAgent(config: PmAgentConfig = {}): Agent {
               clarificationRound: 1,
               owner: PM_ID,
             };
-            const content = model
-              ? await renderPRDViaLlm(next, model)
-              : renderPRD(next);
+            const content = model ? await renderPRDViaLlm(next, model) : renderPRD(next);
             return {
               kind: 'transition',
               nextStage: 'prd_pending_confirmation',
@@ -288,9 +284,7 @@ export function createPmAgent(config: PmAgentConfig = {}): Agent {
         }
 
         case 'approved_for_dev': {
-          const content = model
-            ? await renderPlanViaLlm(p, model)
-            : renderPlan(p);
+          const content = model ? await renderPlanViaLlm(p, model) : renderPlan(p);
           return {
             kind: 'handoff',
             to: 'dev',

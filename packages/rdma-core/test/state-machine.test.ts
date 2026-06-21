@@ -3,14 +3,14 @@
  * every ownership, and the handoff helper.
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 import {
   AGENT_IDS,
   InvalidTransitionError,
   STAGES,
-  type Stage,
   STATUS_TRANSITIONS,
+  type Stage,
   assertValidTransition,
   findPath,
   isValidTransition,
@@ -26,7 +26,15 @@ describe('state-machine: roster', () => {
   });
 
   it('every agent id appears in AGENT_IDS', () => {
-    for (const id of ['market_research', 'coordinator', 'designer', 'pm', 'dev', 'qa', 'boss'] as const) {
+    for (const id of [
+      'market_research',
+      'coordinator',
+      'designer',
+      'pm',
+      'dev',
+      'qa',
+      'boss',
+    ] as const) {
       assert.ok(AGENT_IDS.includes(id));
     }
   });
@@ -96,8 +104,8 @@ describe('state-machine: paths', () => {
   it('findPath returns a valid path from intake to delivered', () => {
     const path = findPath('intake', 'delivered');
     assert.ok(path !== null);
-    assert.equal(path![0], 'intake');
-    assert.equal(path![path!.length - 1], 'delivered');
+    assert.equal(path?.[0], 'intake');
+    assert.equal(path?.[path?.length - 1], 'delivered');
   });
 
   it('findPath returns null for unreachable targets', () => {
@@ -116,15 +124,15 @@ describe('state-machine: realistic flows', () => {
     const path = findPath('intake', 'delivered');
     assert.ok(path !== null);
     // Verify all the key transitions appear
-    assert.ok(path!.includes('clarifying'));
-    assert.ok(path!.includes('prd_pending_confirmation'));
-    assert.ok(path!.includes('approved_for_dev'));
-    assert.ok(path!.includes('in_tdd_test'));
-    assert.ok(path!.includes('in_dev'));
-    assert.ok(path!.includes('in_test_acceptance'));
-    assert.ok(path!.includes('accepted'));
-    assert.ok(path!.includes('deployed'));
-    assert.ok(path!.includes('delivered'));
+    assert.ok(path?.includes('clarifying'));
+    assert.ok(path?.includes('prd_pending_confirmation'));
+    assert.ok(path?.includes('approved_for_dev'));
+    assert.ok(path?.includes('in_tdd_test'));
+    assert.ok(path?.includes('in_dev'));
+    assert.ok(path?.includes('in_test_acceptance'));
+    assert.ok(path?.includes('accepted'));
+    assert.ok(path?.includes('deployed'));
+    assert.ok(path?.includes('delivered'));
   });
 
   it('rework path: in_dev -> test_failed -> in_dev', () => {

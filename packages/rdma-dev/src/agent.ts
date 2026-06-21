@@ -29,18 +29,18 @@ function renderTestPlan(p: import('@rdma/core').Proposal): string {
   return [
     `# Test plan: ${p.title}`,
     '',
-    `## Cases (must fail before implementation)`,
-    ``,
-    `\`\`\``,
+    '## Cases (must fail before implementation)',
+    '',
+    '```',
     `describe('${p.title}', () => {`,
     `  it('handles the happy path', async () => { /* arrange, act, assert */ });`,
     `  it('rejects empty input with a clear error', async () => { /* ... */ });`,
     `  it('handles the edge cases listed in the risk register', async () => { /* ... */ });`,
-    `});`,
-    `\`\`\``,
-    ``,
-    `## Acceptance gate`,
-    `All cases above must pass before handing off to QA.`,
+    '});',
+    '```',
+    '',
+    '## Acceptance gate',
+    'All cases above must pass before handing off to QA.',
   ].join('\n');
 }
 
@@ -49,36 +49,36 @@ function renderImplementation(p: import('@rdma/core').Proposal): string {
     return [
       `# Implementation: ${p.title}`,
       '',
-      `## Plan`,
-      `Single-file CLI that reads JSON from stdin / file and writes CSV to stdout.`,
+      '## Plan',
+      'Single-file CLI that reads JSON from stdin / file and writes CSV to stdout.',
       '',
-      `## Code (sketch)`,
-      ``,
-      `\`\`\`ts`,
-      `// src/convert.ts`,
-      `export function jsonToCsv(input: unknown): string {`,
+      '## Code (sketch)',
+      '',
+      '```ts',
+      '// src/convert.ts',
+      'export function jsonToCsv(input: unknown): string {',
       `  if (!Array.isArray(input)) throw new Error('expected an array of objects');`,
       `  if (input.length === 0) return '';`,
-      `  const headers = Object.keys(input[0]);`,
-      `  const escape = (v: unknown) => {`,
+      '  const headers = Object.keys(input[0]);',
+      '  const escape = (v: unknown) => {',
       `    const s = v == null ? '' : String(v);`,
       `    return /[",\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;`,
-      `  };`,
+      '  };',
       `  const rows = input.map((row) => headers.map((h) => escape((row as Record<string, unknown>)[h])).join(','));`,
       `  return [headers.join(','), ...rows].join('\\n');`,
-      `}`,
-      `\`\`\``,
+      '}',
+      '```',
     ].join('\n');
   }
 
   return [
     `# Implementation: ${p.title}`,
     '',
-    `## Plan`,
-    `Break the problem into a library + a thin CLI wrapper. Library handles core logic; CLI parses args, calls library, prints result.`,
+    '## Plan',
+    'Break the problem into a library + a thin CLI wrapper. Library handles core logic; CLI parses args, calls library, prints result.',
     '',
-    `## Code (sketch)`,
-    `See the test plan for the contract this implementation must satisfy.`,
+    '## Code (sketch)',
+    'See the test plan for the contract this implementation must satisfy.',
   ].join('\n');
 }
 
@@ -115,11 +115,7 @@ async function renderTestPlanViaLlm(
     temperature: 0.3,
   });
 
-  return [
-    `# Test plan: ${p.title} (LLM-generated)`,
-    '',
-    result.text,
-  ].join('\n');
+  return [`# Test plan: ${p.title} (LLM-generated)`, '', result.text].join('\n');
 }
 
 async function renderImplementationViaLlm(
@@ -152,11 +148,7 @@ async function renderImplementationViaLlm(
     temperature: 0.3,
   });
 
-  return [
-    `# Implementation: ${p.title} (LLM-generated)`,
-    '',
-    result.text,
-  ].join('\n');
+  return [`# Implementation: ${p.title} (LLM-generated)`, '', result.text].join('\n');
 }
 
 export interface DevAgentConfig {
@@ -175,9 +167,7 @@ export function createDevAgent(config: DevAgentConfig = {}): Agent {
       const p = ctx.proposal;
 
       if (p.status === 'in_tdd_test') {
-        const content = model
-          ? await renderTestPlanViaLlm(p, model)
-          : renderTestPlan(p);
+        const content = model ? await renderTestPlanViaLlm(p, model) : renderTestPlan(p);
         return {
           kind: 'transition',
           nextStage: 'in_dev',

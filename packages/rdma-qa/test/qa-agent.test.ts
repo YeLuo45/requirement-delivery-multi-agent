@@ -2,11 +2,11 @@
  * QA Agent tests — covers deterministic + LLM modes + rework loop.
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import type { AgentContext, Artifact, Proposal } from '@rdma/core';
 import { createMockProvider } from '@rdma/llm/mock';
 import { createQaAgent } from '../src/agent.js';
-import type { AgentContext, Artifact, Proposal } from '@rdma/core';
 
 function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   return {

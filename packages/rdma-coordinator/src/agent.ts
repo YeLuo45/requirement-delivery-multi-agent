@@ -12,15 +12,6 @@
  */
 
 import {
-  appendArtifact,
-  createProposal,
-  emitHandoff,
-  formatDate,
-  makeIdGenerator,
-  ownerOf,
-  persist,
-  scopeOf,
-  transition,
   type Agent,
   type AgentContext,
   type AgentId,
@@ -31,6 +22,15 @@ import {
   type EventKind,
   type Proposal,
   type Stage,
+  appendArtifact,
+  createProposal,
+  emitHandoff,
+  formatDate,
+  makeIdGenerator,
+  ownerOf,
+  persist,
+  scopeOf,
+  transition,
 } from '@rdma/core';
 
 // Re-export scopeOf so consumers can find it via the package
@@ -78,9 +78,9 @@ export function createCoordinatorAgent(): Agent {
       // requirement (set at creation time). We tag it and hand off.
       const tags: Record<string, string> = {
         ...p.tags,
-        priority: p.tags['priority'] ?? 'P2',
-        scope: p.tags['scope'] ?? 'medium',
-        risk_level: p.tags['risk_level'] ?? 'medium',
+        priority: p.tags.priority ?? 'P2',
+        scope: p.tags.scope ?? 'medium',
+        risk_level: p.tags.risk_level ?? 'medium',
         captured_at: new Date().toISOString(),
       };
 
@@ -88,9 +88,10 @@ export function createCoordinatorAgent(): Agent {
 
       // Decide: UI work goes through designer, otherwise straight to PM.
       // Use word-boundary regex so "build" doesn't accidentally match "ui".
-      const isUiWork = /\b(ui|ux|interface|frontend|page|web\s*app|webapp)\b|design\s+(spec|system|doc)/i.test(
-        `${tagged.title} ${tagged.rawRequirement}`,
-      );
+      const isUiWork =
+        /\b(ui|ux|interface|frontend|page|web\s*app|webapp)\b|design\s+(spec|system|doc)/i.test(
+          `${tagged.title} ${tagged.rawRequirement}`,
+        );
 
       const summary = isUiWork
         ? 'Captured intent; routing through designer before PRD.'
@@ -100,7 +101,7 @@ export function createCoordinatorAgent(): Agent {
         kind: 'requirement_brief' as ArtifactKind,
         agentId: COORDINATOR_ID,
         summary,
-        content: `Title: ${tagged.title}\nRaw requirement: ${tagged.rawRequirement}\n${tagged.sourceUrl ? `Source: ${tagged.sourceUrl}\n` : ''}Priority: ${tags['priority']}\nScope: ${tags['scope']}\nRisk: ${tags['risk_level']}\nUI work: ${isUiWork}`,
+        content: `Title: ${tagged.title}\nRaw requirement: ${tagged.rawRequirement}\n${tagged.sourceUrl ? `Source: ${tagged.sourceUrl}\n` : ''}Priority: ${tags.priority}\nScope: ${tags.scope}\nRisk: ${tags.risk_level}\nUI work: ${isUiWork}`,
       };
 
       const nextAgent: AgentId = isUiWork ? 'designer' : 'pm';
@@ -152,7 +153,12 @@ export class Pipeline {
   }
 
   /** Create a new proposal and return it. Does NOT auto-step the pipeline. */
-  async createProposal(input: { title: string; rawRequirement: string; sourceUrl?: string; tags?: Record<string, string> }): Promise<Proposal> {
+  async createProposal(input: {
+    title: string;
+    rawRequirement: string;
+    sourceUrl?: string;
+    tags?: Record<string, string>;
+  }): Promise<Proposal> {
     const now = new Date();
     const ids = makeIdGenerator();
     const proposal = createProposal({
@@ -180,9 +186,7 @@ export class Pipeline {
     const ownerId = ownerOf(proposal.status);
     const agent = this.registry.get(ownerId);
     if (!agent.scope.includes(proposal.status)) {
-      throw new Error(
-        `Agent ${agent.id} is registered but does not own stage ${proposal.status}`,
-      );
+      throw new Error(`Agent ${agent.id} is registered but does not own stage ${proposal.status}`);
     }
 
     const ctx: AgentContext = {
@@ -208,9 +212,22 @@ export class Pipeline {
       projectId: proposal.projectId,
       actor: agent.id,
       action: 'agent.handle.end',
-      detail: { stage: proposal.status, resultKind: result.kind, next: result.kind === 'handoff' ? result.to : result.kind === 'transition' ? result.nextStage : null },
+      detail: {
+        stage: proposal.status,
+        resultKind: result.kind,
+        next:
+          result.kind === 'handoff'
+            ? result.to
+            : result.kind === 'transition'
+              ? result.nextStage
+              : null,
+      },
     });
-    this.emit('audit.appended', proposal, { stage: proposal.status, kind: 'agent.handle.end', resultKind: result.kind });
+    this.emit('audit.appended', proposal, {
+      stage: proposal.status,
+      kind: 'agent.handle.end',
+      resultKind: result.kind,
+    });
 
     if (result.kind === 'handoff') {
       // Apply artifact (if any) before transition.
@@ -241,7 +258,11 @@ export class Pipeline {
       // emitHandoff, not here).
       const next: Proposal = { ...transitioned, owner: agent.id };
       await persist(next, proposal.status, this.audit, (p) => this.storage.saveProposal(p));
-      this.emit('stage.transitioned', next, { from: proposal.status, to: next.status, reason: result.reason });
+      this.emit('stage.transitioned', next, {
+        from: proposal.status,
+        to: next.status,
+        reason: result.reason,
+      });
       this.emit('proposal.updated', next, { status: next.status });
       return next;
     }
@@ -310,7 +331,12 @@ export class Pipeline {
       action: 'pipeline.resumed',
       detail: { from: fromStage, to: stage },
     });
-    this.emit('audit.appended', rewound, { stage, kind: 'pipeline.resumed', from: fromStage, to: stage });
+    this.emit('audit.appended', rewound, {
+      stage,
+      kind: 'pipeline.resumed',
+      from: fromStage,
+      to: stage,
+    });
     return this.runToCompletion(rewound);
   }
 }

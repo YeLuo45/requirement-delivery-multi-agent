@@ -15,11 +15,7 @@
  *   ```
  */
 
-import type {
-  CompletionRequest,
-  CompletionResult,
-  LlmProvider,
-} from './index.js';
+import type { CompletionRequest, CompletionResult, LlmProvider } from './index.js';
 
 export interface MockConfig {
   /** Fixed responses to cycle through. Default: echo mode. */

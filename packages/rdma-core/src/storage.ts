@@ -66,7 +66,10 @@ export class Storage implements StorageDriver {
     try {
       await fs.access(metaPath);
     } catch {
-      await fs.writeFile(metaPath, JSON.stringify({ version: STORAGE_VERSION, createdAt: new Date().toISOString() }, null, 2));
+      await fs.writeFile(
+        metaPath,
+        JSON.stringify({ version: STORAGE_VERSION, createdAt: new Date().toISOString() }, null, 2),
+      );
     }
   }
 

@@ -6,28 +6,22 @@
  *   Pipeline.step() → bus.publish() → RealtimeServer → WebSocket → RealtimeClient
  */
 
-import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { EventBus } from '@rdma/persistence';
-import { RealtimeServer, RealtimeClient } from '../src/index.js';
-import {
-  AgentRegistry,
-  AuditLog,
-  Storage,
-  type Proposal,
-  type StorageDriver,
-} from '@rdma/core';
-import { Pipeline } from '@rdma/coordinator';
-import { createResearchAgent } from '@rdma/research';
-import { createCoordinatorAgent } from '@rdma/coordinator';
-import { createDesignerAgent } from '@rdma/designer';
-import { createPmAgent } from '@rdma/pm';
-import { createDevAgent } from '@rdma/dev';
-import { createQaAgent } from '@rdma/qa';
-import { createBossAgent } from '@rdma/boss';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { after, describe, it } from 'node:test';
+import { createBossAgent } from '@rdma/boss';
+import { Pipeline } from '@rdma/coordinator';
+import { createCoordinatorAgent } from '@rdma/coordinator';
+import { AgentRegistry, AuditLog, type Proposal, Storage, type StorageDriver } from '@rdma/core';
+import { createDesignerAgent } from '@rdma/designer';
+import { createDevAgent } from '@rdma/dev';
+import { EventBus } from '@rdma/persistence';
+import { createPmAgent } from '@rdma/pm';
+import { createQaAgent } from '@rdma/qa';
+import { createResearchAgent } from '@rdma/research';
+import { RealtimeClient, RealtimeServer } from '../src/index.js';
 
 function bootstrapPipeline(storage: StorageDriver, bus: EventBus): Pipeline {
   const audit = new AuditLog(storage);
@@ -83,7 +77,10 @@ describe('realtime: pipeline → event bus → WebSocket', () => {
     // We expect stage transitions for every agent in the chain. The exact
     // list depends on the state machine, but it should include at least
     // designer/pm/dev/qa/boss targets plus several internal transitions.
-    assert.ok(stagesSeen.length >= 5, `expected several stage transitions, got ${stagesSeen.length}`);
+    assert.ok(
+      stagesSeen.length >= 5,
+      `expected several stage transitions, got ${stagesSeen.length}`,
+    );
 
     // Cleanup
     client.close();

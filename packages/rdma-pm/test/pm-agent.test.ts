@@ -2,11 +2,11 @@
  * PM Agent tests — covers both deterministic and LLM-driven modes.
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import type { AgentContext, Proposal } from '@rdma/core';
 import { createMockProvider } from '@rdma/llm/mock';
 import { createPmAgent } from '../src/agent.js';
-import type { AgentContext, Proposal } from '@rdma/core';
 
 function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   return {
@@ -198,9 +198,6 @@ describe('PM agent: stage coverage', () => {
   it('throws on unexpected stage', async () => {
     const agent = createPmAgent();
     const p = makeProposal({ status: 'in_dev' });
-    await assert.rejects(
-      agent.handle(makeCtx(p)),
-      /unexpected stage/,
-    );
+    await assert.rejects(agent.handle(makeCtx(p)), /unexpected stage/);
   });
 });

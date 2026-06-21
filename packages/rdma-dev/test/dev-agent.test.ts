@@ -2,11 +2,11 @@
  * Dev Agent tests — covers both deterministic and LLM-driven modes.
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import type { AgentContext, Proposal } from '@rdma/core';
 import { createMockProvider } from '@rdma/llm/mock';
 import { createDevAgent } from '../src/agent.js';
-import type { AgentContext, Proposal } from '@rdma/core';
 
 function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   return {

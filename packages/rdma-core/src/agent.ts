@@ -6,7 +6,7 @@
  * factories and stores the resulting agents in a registry keyed by AgentId.
  */
 
-import type { AgentId, Agent } from './types.js';
+import type { Agent, AgentId } from './types.js';
 
 export class AgentRegistry {
   private readonly agents = new Map<AgentId, Agent>();

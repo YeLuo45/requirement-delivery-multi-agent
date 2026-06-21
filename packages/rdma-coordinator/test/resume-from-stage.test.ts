@@ -14,21 +14,21 @@
  *   - the resume can pick up from any valid stage in the state machine
  */
 
-import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { AuditLog, Storage } from '@rdma/core';
-import { EventBus } from '@rdma/persistence';
-import { Pipeline, createCoordinatorAgent } from '../src/agent.js';
-import { createResearchAgent } from '@rdma/research';
-import { createPmAgent } from '@rdma/pm';
-import { createDevAgent } from '@rdma/dev';
-import { createQaAgent } from '@rdma/qa';
+import { after, before, describe, it } from 'node:test';
 import { createBossAgent } from '@rdma/boss';
+import { AuditLog, Storage } from '@rdma/core';
 import { AgentRegistry } from '@rdma/core';
 import type { Stage } from '@rdma/core';
+import { createDevAgent } from '@rdma/dev';
+import { EventBus } from '@rdma/persistence';
+import { createPmAgent } from '@rdma/pm';
+import { createQaAgent } from '@rdma/qa';
+import { createResearchAgent } from '@rdma/research';
+import { Pipeline, createCoordinatorAgent } from '../src/agent.js';
 
 function bootstrap(storage: Storage, bus: EventBus): { pipeline: Pipeline; shippedRoot: string } {
   const shippedRoot = mkdtempSync(path.join(tmpdir(), 'rdma-resume-shipped-'));
@@ -61,7 +61,10 @@ describe('Pipeline.resumeFromStage', () => {
 
     // Run to completion once so we have a delivered proposal — we'll
     // reuse its structure to fabricate a "stuck" mid-pipeline state.
-    const p = await pipeline.createProposal({ title: 'resume me', rawRequirement: 'a small proposal' });
+    const p = await pipeline.createProposal({
+      title: 'resume me',
+      rawRequirement: 'a small proposal',
+    });
     await pipeline.runToCompletion(p);
     const delivered = await storage.getProposal(p.id);
 

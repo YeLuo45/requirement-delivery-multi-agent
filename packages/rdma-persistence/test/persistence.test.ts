@@ -3,8 +3,8 @@
  * SQLite tests are skipped when better-sqlite3 isn't installed.
  */
 
-import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { after, before, describe, it } from 'node:test';
 import { EventBus } from '../src/event-bus.js';
 import { MIGRATIONS, runMigrations } from '../src/migrations.js';
 
@@ -156,13 +156,15 @@ class MockDatabase {
       }
       const createMatch = /^CREATE TABLE(?: IF NOT EXISTS)? (\w+)/i.exec(stmt);
       if (createMatch) {
-        const name = createMatch[1]!;
+        const name = createMatch[1];
+        if (name === undefined) continue;
         if (!this.tables.has(name)) this.tables.set(name, []);
         continue;
       }
       const dropMatch = /^DROP TABLE(?: IF EXISTS)? (\w+)/i.exec(stmt);
       if (dropMatch) {
-        this.tables.delete(dropMatch[1]!);
+        const name = dropMatch[1];
+        if (name !== undefined) this.tables.delete(name);
         continue;
       }
       // CREATE INDEX / CREATE UNIQUE INDEX — no-op for this mock.
@@ -187,9 +189,9 @@ class MockDatabase {
           const table = this.tables.get('meta') ?? [];
           const key = String(params[0]);
           const value = String(params[1]);
-          const existing = table.find((r) => r['key'] === key);
+          const existing = table.find((r) => r.key === key);
           if (existing) {
-            existing['value'] = value;
+            existing.value = value;
           } else {
             table.push({ key, value });
           }
@@ -206,9 +208,9 @@ class MockDatabase {
         run: (...params: unknown[]) => {
           const table = this.tables.get('meta') ?? [];
           const value = String(params[0]);
-          const existing = table.find((r) => r['key'] === 'schema_version');
+          const existing = table.find((r) => r.key === 'schema_version');
           if (existing) {
-            existing['value'] = value;
+            existing.value = value;
           }
           return { changes: existing ? 1 : 0, lastInsertRowid: 0 };
         },
@@ -219,11 +221,11 @@ class MockDatabase {
       return {
         all: () => {
           const table = this.tables.get('meta') ?? [];
-          return table.filter((r) => r['key'] === 'schema_version');
+          return table.filter((r) => r.key === 'schema_version');
         },
         get: () => {
           const table = this.tables.get('meta') ?? [];
-          return table.find((r) => r['key'] === 'schema_version');
+          return table.find((r) => r.key === 'schema_version');
         },
         run: () => ({ changes: 0, lastInsertRowid: 0 }),
       };
@@ -319,7 +321,7 @@ describe('SqliteStorage (skipped if better-sqlite3 missing)', () => {
     await storage.saveProposal(proposal);
     const loaded = await storage.getProposal('P-20260619-001');
     assert.equal(loaded.title, 'test');
-    assert.equal(loaded.tags['priority'], 'P1');
+    assert.equal(loaded.tags.priority, 'P1');
   });
 
   it('exposes a StorageDriver-shaped surface', async () => {

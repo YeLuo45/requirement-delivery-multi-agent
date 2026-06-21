@@ -3,22 +3,22 @@
  * storage round-trips, and audit log handoff chain.
  */
 
-import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { after, before, describe, it } from 'node:test';
 
 import {
-  appendArtifact,
   AuditLog,
+  InvalidTransitionError,
+  Storage,
+  appendArtifact,
   createProposal,
   formatDate,
-  InvalidTransitionError,
   latestArtifact,
   makeIdGenerator,
   persist,
-  Storage,
   transition,
 } from '../src/index.js';
 
@@ -74,7 +74,7 @@ describe('proposal: transition', () => {
     });
     const next = transition(p, 'research', 'research scope agreed');
     assert.equal(next.status, 'research');
-    assert.equal(next.tags['last_transition_reason'], 'research scope agreed');
+    assert.equal(next.tags.last_transition_reason, 'research scope agreed');
   });
 
   it('invalid edge throws InvalidTransitionError', () => {
@@ -109,9 +109,9 @@ describe('proposal: artifacts', () => {
       content: 'long content',
     });
     assert.equal(next.artifacts.length, 1);
-    assert.equal(next.artifacts[0]!.kind, 'requirement_brief');
-    assert.ok(next.artifacts[0]!.id.length > 0);
-    assert.ok(next.artifacts[0]!.createdAt.length > 0);
+    assert.equal(next.artifacts[0]?.kind, 'requirement_brief');
+    assert.ok(next.artifacts[0]?.id.length > 0);
+    assert.ok(next.artifacts[0]?.createdAt.length > 0);
   });
 
   it('latestArtifact returns the most recent artifact of the kind', () => {
@@ -159,7 +159,7 @@ describe('storage + audit', () => {
     assert.ok(projects.includes('PRJ-20260619-001'));
     const proposals = await storage.listProposals();
     assert.equal(proposals.length, 1);
-    assert.equal(proposals[0]!.id, 'P-20260619-001');
+    assert.equal(proposals[0]?.id, 'P-20260619-001');
     const loaded = await storage.getProposal('P-20260619-001');
     assert.equal(loaded.title, 'disk test');
   });
@@ -180,7 +180,7 @@ describe('storage + audit', () => {
     await persist(p, null, audit, (x) => storage.saveProposal(x));
     const entries = await audit.list(p.id, p.projectId);
     assert.equal(entries.length, 1);
-    assert.equal(entries[0]!.action, 'proposal.create');
+    assert.equal(entries[0]?.action, 'proposal.create');
   });
 
   it('persist() writes a stage.transition entry when status changes', async () => {
@@ -201,8 +201,8 @@ describe('storage + audit', () => {
     await persist(next, p.status, audit, (x) => storage.saveProposal(x));
     const entries = await audit.list(p.id, p.projectId);
     assert.equal(entries.length, 2);
-    assert.equal(entries[1]!.action, 'stage.transition');
-    const detail = entries[1]!.detail as { from: string; to: string };
+    assert.equal(entries[1]?.action, 'stage.transition');
+    const detail = entries[1]?.detail as { from: string; to: string };
     assert.equal(detail.from, 'research_direction_pending');
     assert.equal(detail.to, 'research');
   });

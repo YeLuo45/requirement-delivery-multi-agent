@@ -7,8 +7,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { AgentId, AuditAction, AuditEntry } from './types.js';
 import type { StorageDriver } from './storage.js';
+import type { AgentId, AuditAction, AuditEntry } from './types.js';
 
 export class AuditLog {
   readonly storage: StorageDriver;
@@ -38,14 +38,28 @@ export class AuditLog {
 
   async list(proposalId: string, projectId: string): Promise<ReadonlyArray<AuditEntry>> {
     const lines = await this.storage.readAudit(proposalId, projectId);
-    return lines.map((line) => JSON.parse(line) as AuditEntry);
+    // Tolerate lines written by older versions or corrupted by external
+    // edits — skip the bad line and keep going so consumers (e.g.
+    // `rdma inspect`, web dashboard) can still show the rest of the log.
+    const out: AuditEntry[] = [];
+    for (const line of lines) {
+      try {
+        out.push(JSON.parse(line) as AuditEntry);
+      } catch {
+        // skip malformed line
+      }
+    }
+    return out;
   }
 
   /**
    * Reconstruct the handoff chain — every actor that touched the proposal,
    * in order. Used by the web dashboard for the "Handoff Timeline" view.
    */
-  async handoffChain(proposalId: string, projectId: string): Promise<ReadonlyArray<AgentId | 'user'>> {
+  async handoffChain(
+    proposalId: string,
+    projectId: string,
+  ): Promise<ReadonlyArray<AgentId | 'user'>> {
     const entries = await this.list(proposalId, projectId);
     const chain: Array<AgentId | 'user'> = [];
     for (const e of entries) {

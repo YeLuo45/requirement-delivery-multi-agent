@@ -9,28 +9,23 @@
  * Outputs a markdown-friendly table to stdout.
  */
 
-import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { EventBus, SqliteStorage } from '@rdma/persistence';
-import {
-  AgentRegistry,
-  AuditLog,
-  Storage,
-  type StorageDriver,
-} from '@rdma/core';
-import { Pipeline } from '@rdma/coordinator';
-import { createResearchAgent } from '@rdma/research';
-import { createCoordinatorAgent } from '@rdma/coordinator';
-import { createDesignerAgent } from '@rdma/designer';
-import { createPmAgent } from '@rdma/pm';
-import { createDevAgent } from '@rdma/dev';
-import { createQaAgent } from '@rdma/qa';
+import { after, before, describe, it } from 'node:test';
 import { createBossAgent } from '@rdma/boss';
-import { RealtimeServer, RealtimeClient } from '@rdma/realtime';
+import { Pipeline } from '@rdma/coordinator';
+import { createCoordinatorAgent } from '@rdma/coordinator';
+import { AgentRegistry, AuditLog, Storage, type StorageDriver } from '@rdma/core';
+import { createDesignerAgent } from '@rdma/designer';
+import { createDevAgent } from '@rdma/dev';
+import { EventBus, SqliteStorage } from '@rdma/persistence';
+import { createPmAgent } from '@rdma/pm';
+import { createQaAgent } from '@rdma/qa';
+import { RealtimeClient, RealtimeServer } from '@rdma/realtime';
+import { createResearchAgent } from '@rdma/research';
 import WebSocket from 'ws';
 
 const SHIPPED = mkdtempSync(path.join(tmpdir(), 'rdma-shipped-'));
@@ -153,7 +148,7 @@ describe('bench: persistence + realtime', () => {
         });
         ws.on('message', (data) => {
           const parsed = JSON.parse(String(data)) as { type?: string };
-          if (parsed.type === 'event') counts[i]!++;
+          if (parsed.type === 'event') counts[i] = (counts[i] ?? 0) + 1;
         });
       }
       await new Promise((r) => setTimeout(r, 60)); // drain hello/backfill
@@ -208,7 +203,9 @@ describe('bench: persistence + realtime', () => {
       await new Promise((r) => setTimeout(r, 80));
       const avg = latencies.reduce((s, n) => s + n, 0) / latencies.length;
       const max = Math.max(...latencies);
-      console.log(`  latency: avg=${avg.toFixed(1)}ms max=${max.toFixed(1)}ms samples=${latencies.length}`);
+      console.log(
+        `  latency: avg=${avg.toFixed(1)}ms max=${max.toFixed(1)}ms samples=${latencies.length}`,
+      );
       assert.ok(avg < 50, `Avg latency too high: ${avg.toFixed(1)}ms`);
     } finally {
       sub();

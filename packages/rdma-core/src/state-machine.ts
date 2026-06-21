@@ -10,7 +10,7 @@
  */
 
 import type { AgentId, Stage } from './types.js';
-import { AGENT_IDS, STAGES, InvalidTransitionError } from './types.js';
+import { AGENT_IDS, InvalidTransitionError, STAGES } from './types.js';
 
 // Re-export the shared building blocks so consumers can `import { AGENT_IDS,
 // STAGES } from '@rdma/core/state-machine'` without a separate types import.
@@ -129,7 +129,8 @@ export function findPath(from: Stage, to: Stage): ReadonlyArray<Stage> | null {
   const visited = new Set<Stage>([from]);
 
   while (queue.length > 0) {
-    const current = queue.shift()!;
+    const current = queue.shift();
+    if (current === undefined) break;
     for (const next of STATUS_TRANSITIONS[current.stage]) {
       if (visited.has(next)) continue;
       const newPath = [...current.path, next];

@@ -76,7 +76,8 @@ export interface LlmProvider {
  */
 export class MeteredProvider implements LlmProvider {
   readonly provider: LlmProvider;
-  readonly usage: Array<{ at: string; model: string; inputTokens: number; outputTokens: number }> = [];
+  readonly usage: Array<{ at: string; model: string; inputTokens: number; outputTokens: number }> =
+    [];
 
   constructor(provider: LlmProvider) {
     this.provider = provider;

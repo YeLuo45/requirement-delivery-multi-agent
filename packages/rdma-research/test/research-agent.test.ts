@@ -2,10 +2,10 @@
  * Research Agent tests — covers Canned + Web research providers.
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createResearchAgent, CannedResearchProvider, WebResearchProvider } from '../src/agent.js';
+import { describe, it } from 'node:test';
 import type { AgentContext, Proposal } from '@rdma/core';
+import { CannedResearchProvider, WebResearchProvider, createResearchAgent } from '../src/agent.js';
 
 function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   return {
@@ -148,7 +148,11 @@ describe('Research agent: web mode', () => {
       return new Response(
         JSON.stringify({
           items: [
-            { html_url: 'https://github.com/fallback/repo', full_name: 'fallback/repo', description: 'fallback' },
+            {
+              html_url: 'https://github.com/fallback/repo',
+              full_name: 'fallback/repo',
+              description: 'fallback',
+            },
           ],
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },

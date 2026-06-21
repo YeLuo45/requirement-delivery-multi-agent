@@ -4,14 +4,14 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AgentRegistry, AuditLog, Storage } from '@rdma/core';
-import { Pipeline, createCoordinatorAgent } from '@rdma/coordinator';
-import { createResearchAgent } from '@rdma/research';
-import { createDesignerAgent } from '@rdma/designer';
-import { createPmAgent } from '@rdma/pm';
-import { createDevAgent } from '@rdma/dev';
-import { createQaAgent } from '@rdma/qa';
 import { createBossAgent } from '@rdma/boss';
+import { Pipeline, createCoordinatorAgent } from '@rdma/coordinator';
+import { AgentRegistry, AuditLog, Storage } from '@rdma/core';
+import { createDesignerAgent } from '@rdma/designer';
+import { createDevAgent } from '@rdma/dev';
+import { createPmAgent } from '@rdma/pm';
+import { createQaAgent } from '@rdma/qa';
+import { createResearchAgent } from '@rdma/research';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

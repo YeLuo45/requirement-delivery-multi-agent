@@ -6,10 +6,10 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import type { AuditLog } from './audit-log.js';
+import { assertValidTransition } from './state-machine.js';
 import type { AgentId, Artifact, ArtifactKind, Proposal, Stage } from './types.js';
 import { InvalidTransitionError } from './types.js';
-import { assertValidTransition } from './state-machine.js';
-import type { AuditLog } from './audit-log.js';
 
 export interface IdGenerator {
   proposalId(date: Date, seq: number): string;
@@ -80,7 +80,10 @@ export function transition(proposal: Proposal, to: Stage, reason: string): Propo
 /**
  * Append an artifact. Returns a new proposal (immutable).
  */
-export function appendArtifact(proposal: Proposal, artifact: Omit<Artifact, 'id' | 'createdAt'>): Proposal {
+export function appendArtifact(
+  proposal: Proposal,
+  artifact: Omit<Artifact, 'id' | 'createdAt'>,
+): Proposal {
   const full: Artifact = {
     id: randomUUID(),
     createdAt: new Date().toISOString(),
@@ -138,7 +141,7 @@ export async function persist(
       detail: {
         from: prevStatus,
         to: proposal.status,
-        reason: proposal.tags['last_transition_reason'] ?? '',
+        reason: proposal.tags.last_transition_reason ?? '',
       },
     });
   } else {

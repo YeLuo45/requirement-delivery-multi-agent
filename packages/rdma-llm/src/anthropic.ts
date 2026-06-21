@@ -68,7 +68,10 @@ export function createAnthropicProvider(config: AnthropicConfig): LlmProvider {
       const conversationMessages = request.messages.filter((m) => m.role !== 'system');
 
       if (systemMessages.length > 1) {
-        throw new LlmError('anthropic', 'Multiple system messages are not supported by the Anthropic API');
+        throw new LlmError(
+          'anthropic',
+          'Multiple system messages are not supported by the Anthropic API',
+        );
       }
 
       const body: AnthropicRequest = {

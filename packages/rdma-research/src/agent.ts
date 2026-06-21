@@ -17,14 +17,18 @@
  *   research                    → intake (coordinator)
  */
 
-import { latestArtifact, type Agent, type AgentContext, type AgentId, type AgentResult, type Stage } from '@rdma/core';
+import {
+  type Agent,
+  type AgentContext,
+  type AgentId,
+  type AgentResult,
+  type Stage,
+  latestArtifact,
+} from '@rdma/core';
 
 export const RESEARCH_ID: AgentId = 'market_research';
 
-export const RESEARCH_SCOPE: ReadonlyArray<Stage> = [
-  'research_direction_pending',
-  'research',
-];
+export const RESEARCH_SCOPE: ReadonlyArray<Stage> = ['research_direction_pending', 'research'];
 
 export interface SimilarProject {
   readonly url: string;
@@ -53,20 +57,44 @@ export class CannedResearchProvider implements ResearchProvider {
     const q = query.toLowerCase();
     if (q.includes('json') && q.includes('csv')) {
       return [
-        { url: 'https://github.com/flatjson/flatjson', name: 'flatjson', oneLiner: 'Flat JSON to CSV converter (Node)' },
-        { url: 'https://github.com/d3/d3-dsv', name: 'd3-dsv', oneLiner: 'CSV / TSV parser and formatter (d3)' },
-        { url: 'https://github.com/mafintosh/csv-parser', name: 'csv-parser', oneLiner: 'Streaming CSV parser for Node' },
+        {
+          url: 'https://github.com/flatjson/flatjson',
+          name: 'flatjson',
+          oneLiner: 'Flat JSON to CSV converter (Node)',
+        },
+        {
+          url: 'https://github.com/d3/d3-dsv',
+          name: 'd3-dsv',
+          oneLiner: 'CSV / TSV parser and formatter (d3)',
+        },
+        {
+          url: 'https://github.com/mafintosh/csv-parser',
+          name: 'csv-parser',
+          oneLiner: 'Streaming CSV parser for Node',
+        },
       ];
     }
     if (q.includes('cli') || q.includes('command')) {
       return [
-        { url: 'https://github.com/tj/commander.js', name: 'commander.js', oneLiner: 'Node CLI framework' },
+        {
+          url: 'https://github.com/tj/commander.js',
+          name: 'commander.js',
+          oneLiner: 'Node CLI framework',
+        },
         { url: 'https://github.com/yargs/yargs', name: 'yargs', oneLiner: 'CLI argument parser' },
-        { url: 'https://github.com/charmbracelet/bubbletea', name: 'bubbletea', oneLiner: 'Go TUI framework for CLIs' },
+        {
+          url: 'https://github.com/charmbracelet/bubbletea',
+          name: 'bubbletea',
+          oneLiner: 'Go TUI framework for CLIs',
+        },
       ];
     }
     return [
-      { url: 'https://github.com/topics/' + encodeURIComponent(q.split(/\s+/).slice(0, 2).join('-')), name: 'github topic search', oneLiner: 'Browse related projects on GitHub' },
+      {
+        url: `https://github.com/topics/${encodeURIComponent(q.split(/\s+/).slice(0, 2).join('-'))}`,
+        name: 'github topic search',
+        oneLiner: 'Browse related projects on GitHub',
+      },
     ];
   }
 }
@@ -180,23 +208,23 @@ export class WebResearchProvider implements ResearchProvider {
 
 function extractRepoName(url: string, fallback: string): string {
   const match = url.match(/github\.com\/([^/]+\/[^/]+)/);
-  return match ? match[1]! : fallback;
+  return match?.[1] ?? fallback;
 }
 
 function renderBriefMarkdown(p: import('@rdma/core').Proposal, brief: RequirementBrief): string {
   return [
     `# Requirement Brief: ${p.title}`,
     '',
-    `## Restatement`,
+    '## Restatement',
     brief.restatement,
     '',
-    `## Similar open-source projects`,
+    '## Similar open-source projects',
     ...brief.similarProjects.map((s) => `- [${s.name}](${s.url}) — ${s.oneLiner}`),
     '',
-    `## Candidate decomposition angles`,
+    '## Candidate decomposition angles',
     ...brief.decompositionAngles.map((a, i) => `${i + 1}. ${a}`),
     '',
-    `## Risk register`,
+    '## Risk register',
     ...brief.riskRegister.map((r) => `- ${r}`),
   ].join('\n');
 }

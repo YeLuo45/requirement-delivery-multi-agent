@@ -14,7 +14,7 @@
  */
 
 import type { StorageDriver } from '@rdma/core';
-import { EventBus, type Event } from './event-bus.js';
+import type { Event, EventBus } from './event-bus.js';
 
 export class EventEmittingStorage implements StorageDriver {
   readonly backendName: string;

@@ -33,7 +33,7 @@ export interface BossConfig {
 export function createBossAgent(config: BossConfig = {}): Agent {
   const shippedRoot =
     config.shippedRoot ??
-    process.env['RDMA_SHIPPED_ROOT'] ??
+    process.env.RDMA_SHIPPED_ROOT ??
     path.join(process.cwd(), '.rdma', 'shipped');
 
   return {

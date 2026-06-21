@@ -10,11 +10,11 @@
  *   - does not break storage writes when a subscriber throws
  */
 
-import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { after, before, describe, it } from 'node:test';
 import { Storage } from '@rdma/core';
 import type { Proposal } from '@rdma/core';
 import { EventBus, EventEmittingStorage } from '../src/index.js';
@@ -67,12 +67,14 @@ describe('EventEmittingStorage', () => {
   it('saveProposal emits proposal.updated with status payload', async () => {
     const seen: Array<{ kind: string; payload: Record<string, unknown> }> = [];
     bus.subscribe('proposal.updated', (e) => seen.push({ kind: e.kind, payload: e.payload ?? {} }));
-    await wrapper.saveProposal(makeProposal({ id: 'P-A', status: 'research', artifacts: ['art1', 'art2'] }));
+    await wrapper.saveProposal(
+      makeProposal({ id: 'P-A', status: 'research', artifacts: ['art1', 'art2'] }),
+    );
     await new Promise((r) => setTimeout(r, 5));
     assert.equal(seen.length, 1);
     assert.equal(seen[0]?.kind, 'proposal.updated');
-    assert.equal(seen[0]?.payload['status'], 'research');
-    assert.equal(seen[0]?.payload['artifactCount'], 2);
+    assert.equal(seen[0]?.payload.status, 'research');
+    assert.equal(seen[0]?.payload.artifactCount, 2);
   });
 
   it('appendAudit emits audit.appended with the raw line payload', async () => {
@@ -82,7 +84,7 @@ describe('EventEmittingStorage', () => {
     await new Promise((r) => setTimeout(r, 5));
     assert.equal(seen.length, 1);
     assert.equal(seen[0]?.kind, 'audit.appended');
-    assert.match(String(seen[0]?.payload['line'] ?? ''), /agent\.handle\.start/);
+    assert.match(String(seen[0]?.payload.line ?? ''), /agent\.handle\.start/);
   });
 
   it('saveProposal keeps the proposal on disk (delegate works)', async () => {

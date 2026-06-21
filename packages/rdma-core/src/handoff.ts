@@ -7,9 +7,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { AgentId, HandoffRecord, Proposal, Stage } from './types.js';
-import { assertValidTransition, ownerOf, STATUS_TRANSITIONS } from './state-machine.js';
 import type { AuditLog } from './audit-log.js';
+import { STATUS_TRANSITIONS, assertValidTransition, ownerOf } from './state-machine.js';
+import type { AgentId, HandoffRecord, Proposal, Stage } from './types.js';
 
 export interface HandoffEvent {
   readonly proposal: Proposal;
@@ -60,7 +60,12 @@ export async function emitHandoff(input: {
     projectId: next.projectId,
     actor: input.proposal.owner ?? 'system',
     action: 'handoff.emit',
-    detail: { to: input.to, reason: input.reason, fromStage: input.proposal.status, toStage: targetStage },
+    detail: {
+      to: input.to,
+      reason: input.reason,
+      fromStage: input.proposal.status,
+      toStage: targetStage,
+    },
   });
 
   return next;

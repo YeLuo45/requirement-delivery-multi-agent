@@ -13,8 +13,8 @@
  *   - subscribeFrom after publish delivers the new event live
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 import { EventBus } from '../src/event-bus.js';
 
 function ev(seq: number, kind = 'audit.appended'): import('../src/event-bus.js').SequencedEvent {
@@ -182,7 +182,9 @@ describe('EventBus sequence + replay', () => {
     const bus = new EventBus();
     publishN(bus, 2);
     let resolveFn: () => void = () => undefined;
-    const settled = new Promise<void>((r) => (resolveFn = r));
+    const settled = new Promise<void>((resolve) => {
+      resolveFn = resolve;
+    });
     bus.subscribeFrom(0, async () => {
       await new Promise((r) => setTimeout(r, 5));
       resolveFn();

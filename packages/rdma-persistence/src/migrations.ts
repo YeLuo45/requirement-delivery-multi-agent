@@ -100,11 +100,14 @@ export const MIGRATIONS: ReadonlyArray<Migration> = [
   },
 ];
 
-export function runMigrations(db: Database, targetVersion?: number): {
+export function runMigrations(
+  db: Database,
+  targetVersion?: number,
+): {
   applied: number[];
   current: number;
 } {
-  db.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+  db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
   const row = db.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get() as
     | { value: string }
     | undefined;
@@ -121,12 +124,12 @@ export function runMigrations(db: Database, targetVersion?: number): {
       // Insert schema_version with key+value as separate placeholders so a
       // mock DB that doesn't parse SQL can still match the column count.
       if (current === 0) {
-        db.prepare(`INSERT INTO meta (key, value) VALUES (?, ?)`).run(
+        db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run(
           'schema_version',
           String(next.version),
         );
       } else {
-        db.prepare(`UPDATE meta SET value = ? WHERE key = ?`).run(
+        db.prepare('UPDATE meta SET value = ? WHERE key = ?').run(
           String(next.version),
           'schema_version',
         );

@@ -17,13 +17,7 @@
  *   - Cascade-delete artifacts + audit when a proposal is removed
  */
 
-import type {
-  Artifact,
-  AuditEntry,
-  Proposal,
-  Stage,
-  StorageDriver,
-} from '@rdma/core';
+import type { Artifact, AuditEntry, Proposal, Stage, StorageDriver } from '@rdma/core';
 import { ProposalNotFoundError } from '@rdma/core';
 import { runMigrations } from './migrations.js';
 
@@ -162,9 +156,7 @@ export class SqliteStorage implements StorageDriver {
 
       // Replace artifacts (full rewrite — simpler than diffing)
       this.db
-        .prepare(
-          'DELETE FROM proposal_artifacts WHERE proposal_project_id = ? AND proposal_id = ?',
-        )
+        .prepare('DELETE FROM proposal_artifacts WHERE proposal_project_id = ? AND proposal_id = ?')
         .run(proposal.projectId, proposal.id);
       const insertArtifact = this.db.prepare(
         `INSERT INTO proposal_artifacts
@@ -190,9 +182,9 @@ export class SqliteStorage implements StorageDriver {
   }
 
   async getProposal(proposalId: string): Promise<Proposal> {
-    const row = this.db
-      .prepare('SELECT * FROM proposals WHERE id = ? LIMIT 1')
-      .get(proposalId) as Record<string, unknown> | undefined;
+    const row = this.db.prepare('SELECT * FROM proposals WHERE id = ? LIMIT 1').get(proposalId) as
+      | Record<string, unknown>
+      | undefined;
     if (!row) throw new ProposalNotFoundError(proposalId);
 
     const artifactRows = this.db
@@ -205,12 +197,12 @@ export class SqliteStorage implements StorageDriver {
       .all(proposalId) as Array<Record<string, unknown>>;
 
     const artifacts: Artifact[] = artifactRows.map((r) => ({
-      id: String(r['artifact_id']),
-      kind: r['kind'] as Artifact['kind'],
-      agentId: String(r['agent_id']),
-      summary: String(r['summary']),
-      content: String(r['content']),
-      createdAt: String(r['created_at']),
+      id: String(r.artifact_id),
+      kind: r.kind as Artifact['kind'],
+      agentId: String(r.agent_id),
+      summary: String(r.summary),
+      content: String(r.content),
+      createdAt: String(r.created_at),
     }));
 
     return rowToProposal(row, artifacts);
@@ -220,19 +212,15 @@ export class SqliteStorage implements StorageDriver {
     let rows: unknown[];
     if (projectId) {
       rows = this.db
-        .prepare(
-          'SELECT * FROM proposals WHERE project_id = ? ORDER BY created_at DESC',
-        )
+        .prepare('SELECT * FROM proposals WHERE project_id = ? ORDER BY created_at DESC')
         .all(projectId);
     } else {
-      rows = this.db
-        .prepare('SELECT * FROM proposals ORDER BY created_at DESC')
-        .all();
+      rows = this.db.prepare('SELECT * FROM proposals ORDER BY created_at DESC').all();
     }
 
     return Promise.all(
       (rows as Array<Record<string, unknown>>).map(async (row) => {
-        const proposalId = String(row['id']);
+        const proposalId = String(row.id);
         const artifactRows = this.db
           .prepare(
             `SELECT artifact_id, kind, agent_id, summary, content, created_at
@@ -242,12 +230,12 @@ export class SqliteStorage implements StorageDriver {
           )
           .all(proposalId) as Array<Record<string, unknown>>;
         const artifacts: Artifact[] = artifactRows.map((r) => ({
-          id: String(r['artifact_id']),
-          kind: r['kind'] as Artifact['kind'],
-          agentId: String(r['agent_id']),
-          summary: String(r['summary']),
-          content: String(r['content']),
-          createdAt: String(r['created_at']),
+          id: String(r.artifact_id),
+          kind: r.kind as Artifact['kind'],
+          agentId: String(r.agent_id),
+          summary: String(r.summary),
+          content: String(r.content),
+          createdAt: String(r.created_at),
         }));
         return rowToProposal(row, artifacts);
       }),
@@ -256,20 +244,14 @@ export class SqliteStorage implements StorageDriver {
 
   async listProjects(): Promise<ReadonlyArray<string>> {
     const rows = this.db
-      .prepare(
-        'SELECT DISTINCT project_id FROM proposals ORDER BY project_id DESC',
-      )
+      .prepare('SELECT DISTINCT project_id FROM proposals ORDER BY project_id DESC')
       .all() as Array<Record<string, unknown>>;
-    return rows.map((r) => String(r['project_id']));
+    return rows.map((r) => String(r.project_id));
   }
 
   // --- Audit log ---
 
-  async appendAudit(
-    proposalId: string,
-    projectId: string,
-    line: string,
-  ): Promise<void> {
+  async appendAudit(proposalId: string, projectId: string, line: string): Promise<void> {
     const entry = JSON.parse(line) as AuditEntry;
     this.db
       .prepare(
@@ -287,10 +269,7 @@ export class SqliteStorage implements StorageDriver {
       );
   }
 
-  async readAudit(
-    proposalId: string,
-    projectId: string,
-  ): Promise<ReadonlyArray<string>> {
+  async readAudit(proposalId: string, projectId: string): Promise<ReadonlyArray<string>> {
     const rows = this.db
       .prepare(
         `SELECT actor, action, at, detail_json
@@ -301,10 +280,10 @@ export class SqliteStorage implements StorageDriver {
       .all(proposalId, projectId) as Array<Record<string, unknown>>;
     return rows.map((r) =>
       JSON.stringify({
-        actor: r['actor'],
-        action: r['action'],
-        at: r['at'],
-        detail: JSON.parse(String(r['detail_json'])),
+        actor: r.actor,
+        action: r.action,
+        at: r.at,
+        detail: JSON.parse(String(r.detail_json)),
       }),
     );
   }
@@ -312,13 +291,13 @@ export class SqliteStorage implements StorageDriver {
   // --- Misc ---
 
   async readMeta(): Promise<{ version: number; createdAt: string }> {
-    const row = this.db
-      .prepare(`SELECT value FROM meta WHERE key = 'schema_version'`)
-      .get() as { value: string } | undefined;
+    const row = this.db.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get() as
+      | { value: string }
+      | undefined;
     const version = row ? Number(row.value) : 1;
-    const createdRow = this.db
-      .prepare(`SELECT value FROM meta WHERE key = 'created_at'`)
-      .get() as { value: string } | undefined;
+    const createdRow = this.db.prepare(`SELECT value FROM meta WHERE key = 'created_at'`).get() as
+      | { value: string }
+      | undefined;
     return {
       version,
       createdAt: createdRow?.value ?? new Date().toISOString(),
@@ -326,24 +305,21 @@ export class SqliteStorage implements StorageDriver {
   }
 }
 
-function rowToProposal(
-  row: Record<string, unknown>,
-  artifacts: Artifact[],
-): Proposal {
-  const tagsJson = String(row['tags_json'] ?? '{}');
-  const sourceUrl = row['source_url'] as string | null;
+function rowToProposal(row: Record<string, unknown>, artifacts: Artifact[]): Proposal {
+  const tagsJson = String(row.tags_json ?? '{}');
+  const sourceUrl = row.source_url as string | null;
   return {
-    id: String(row['id']),
-    projectId: String(row['project_id']),
-    title: String(row['title']),
-    rawRequirement: String(row['raw_requirement']),
+    id: String(row.id),
+    projectId: String(row.project_id),
+    title: String(row.title),
+    rawRequirement: String(row.raw_requirement),
     ...(sourceUrl ? { sourceUrl } : {}),
-    status: String(row['status']) as Stage,
-    owner: (row['owner'] as string | null) ?? null,
-    clarificationRound: Number(row['clarification_round'] ?? 0),
+    status: String(row.status) as Stage,
+    owner: (row.owner as string | null) ?? null,
+    clarificationRound: Number(row.clarification_round ?? 0),
     tags: JSON.parse(tagsJson) as Record<string, string>,
-    createdAt: String(row['created_at']),
-    updatedAt: String(row['updated_at']),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
     artifacts,
   };
 }

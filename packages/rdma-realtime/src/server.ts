@@ -31,9 +31,9 @@
  * exposing publicly.
  */
 
-import { WebSocketServer, type WebSocket } from 'ws';
 import type { Server as HttpServer } from 'node:http';
-import type { Event, EventBus, EventKind, ALL_EVENTS } from '@rdma/persistence';
+import type { ALL_EVENTS, Event, EventBus, EventKind } from '@rdma/persistence';
+import { type WebSocket, WebSocketServer } from 'ws';
 
 const ALL = '*' as typeof ALL_EVENTS;
 

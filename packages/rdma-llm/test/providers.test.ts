@@ -8,10 +8,10 @@
  *   - MeteredProvider: usage tracking
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
-import { LlmError, MeteredProvider, type LlmProvider } from '../src/index.js';
+import { LlmError, type LlmProvider, MeteredProvider } from '../src/index.js';
 import { createMockProvider } from '../src/mock.js';
 
 describe('mock provider', () => {
@@ -104,12 +104,12 @@ describe('anthropic provider (request shape)', () => {
       assert.equal(result.usage.outputTokens, 7);
 
       assert.ok(captured);
-      assert.match(captured!.url, /\/v1\/messages$/);
-      const headers = captured!.init.headers as Record<string, string>;
+      assert.match(captured?.url, /\/v1\/messages$/);
+      const headers = captured?.init.headers as Record<string, string>;
       assert.equal(headers['x-api-key'], 'test-key');
       assert.equal(headers['anthropic-version'], '2023-06-01');
 
-      const body = JSON.parse(captured!.init.body as string);
+      const body = JSON.parse(captured?.init.body as string);
       assert.equal(body.system, 'You are helpful');
       assert.equal(body.max_tokens, 100);
       assert.equal(body.temperature, 0.5);
@@ -174,11 +174,11 @@ describe('openai provider (request shape)', () => {
       assert.equal(result.stopReason, 'end_turn');
 
       assert.ok(captured);
-      assert.match(captured!.url, /\/v1\/chat\/completions$/);
-      const headers = captured!.init.headers as Record<string, string>;
-      assert.equal(headers['authorization'], 'Bearer test-key');
+      assert.match(captured?.url, /\/v1\/chat\/completions$/);
+      const headers = captured?.init.headers as Record<string, string>;
+      assert.equal(headers.authorization, 'Bearer test-key');
 
-      const body = JSON.parse(captured!.init.body as string);
+      const body = JSON.parse(captured?.init.body as string);
       assert.equal(body.messages.length, 2);
       assert.equal(body.messages[0].role, 'system');
       assert.equal(body.messages[1].role, 'user');

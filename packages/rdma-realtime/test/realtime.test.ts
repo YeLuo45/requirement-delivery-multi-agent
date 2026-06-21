@@ -8,11 +8,11 @@
  *   - close() shuts the server down cleanly
  */
 
-import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
-import WebSocket from 'ws';
+import { after, describe, it } from 'node:test';
 import { EventBus } from '@rdma/persistence';
-import { RealtimeServer, RealtimeClient } from '../src/index.js';
+import WebSocket from 'ws';
+import { RealtimeClient, RealtimeServer } from '../src/index.js';
 
 const PORT = 47231;
 
