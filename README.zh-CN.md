@@ -482,8 +482,14 @@ requirement-delivery-multi-agent/
 
 - `buildDeliveryPlan()` + `executeSandboxPatch()`：规划并写入隔离 sandbox，输出可审查 patch bundle。
 - `evaluateToolRequest()` + `publishPolicyAuditEvent()`：把工具策略 allow/deny 决策转成审计事件。
-- `createBudgetLedger()` + `recordBudgetMetrics()`：按 proposal 记录成本，并输出 cents 级指标。
-- `approveCollaborator()` + `formatCollaborationPanel()`：把 readonly/review/edit 协作权限渲染成 CLI/TUI/Web 可复用面板。
+- `subscribePolicyAuditBus()`：把策略事件 fan-out 给多个订阅者（CLI/TUI/Web）。
+- `attachPolicyAuditToEventBus()`：把 `PolicyAuditBus` 适配到真实 `EventBus`，让 allow/deny 事件走 realtime 流。
+- `renderCostPrometheus()`：输出 `rdma_cost_*` Prometheus 文本。
+- `renderControlPlanePanel({mode: 'prom' | 'json' | 'tui'})`：统一输出 CLI/TUI/Web 面板。
+- `buildSandboxPreview()`：在不写盘的情况下生成 patch bundle。
+- `rdma sandbox apply --workspace-root <path> --proposal <id> --files <path>=<content> [--dry-run]`：从 CLI 应用或预览 sandbox 补丁。
+- `rdma metrics --cost` 输出成本 Prometheus 指标；`rdma tui --control-plane`（或在 TUI 内输入 `[p]lane`）打印面板摘要。
+- Web 面板 `GET /api/control-plane/panel` 与 `GET /api/control-plane/cost`：分别返回四个方向 JSON 与 Prometheus 文本。
 
 这些 API 都是本地纯 TypeScript 逻辑，不执行 shell，不访问外网。
 

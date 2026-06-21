@@ -139,8 +139,14 @@ The brief is then handed to the coordinator, who registers a proposal and starts
 
 - `buildDeliveryPlan()` and `executeSandboxPatch()` plan and apply file writes inside an isolated sandbox root.
 - `evaluateToolRequest()` and `publishPolicyAuditEvent()` turn tool-policy decisions into auditable allow/deny events.
-- `createBudgetLedger()` and `recordBudgetMetrics()` track proposal spend as cents-based counters.
-- `approveCollaborator()` and `formatCollaborationPanel()` expose readonly/review/edit access decisions for CLI/TUI/Web surfaces.
+- `subscribePolicyAuditBus()` fans policy audit events out to multiple subscribers (CLI/TUI/Web).
+- `attachPolicyAuditToEventBus()` adapts `PolicyAuditBus` to a real `EventBus`-style publisher so allow/deny events flow through the existing realtime stream.
+- `renderCostPrometheus()` exports `rdma_cost_*` counters in Prometheus text format.
+- `renderControlPlanePanel({mode: 'prom' | 'json' | 'tui'})` produces a unified panel payload for CLI/TUI/Web.
+- `buildSandboxPreview()` produces a patch bundle without writing to disk.
+- `rdma sandbox apply --workspace-root <path> --proposal <id> --files <path>=<content> [--dry-run]` applies (or previews) a sandbox patch from the CLI.
+- `rdma metrics --cost` prints the rdma_cost_* Prometheus metrics; `rdma tui --control-plane` (or the in-TUI `[p]lane` command) prints the panel summary.
+- `GET /api/control-plane/panel` and `GET /api/control-plane/cost` on the web dashboard expose the panel JSON and Prometheus text.
 
 These helpers are pure local TypeScript APIs; they do not execute shell commands or call external networks.
 

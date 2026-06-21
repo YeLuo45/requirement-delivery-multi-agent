@@ -15,13 +15,15 @@
   },
   "scripts": {
     "start": "node --import tsx src/cli.ts",
-    "rdma": "node --import tsx src/cli.ts"
+    "rdma": "node --import tsx src/cli.ts",
+    "test": "node --test --import tsx test/*.test.ts"
   },
   "dependencies": {
     "@rdma/boss": "*",
     "@rdma/config": "*",
     "@rdma/core": "*",
     "@rdma/coordinator": "*",
+    "@rdma/delivery-control": "*",
     "@rdma/designer": "*",
     "@rdma/dev": "*",
     "@rdma/llm": "*",

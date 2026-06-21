@@ -164,6 +164,7 @@ export interface SandboxPatchResult {
   readonly writtenFiles: ReadonlyArray<string>;
   readonly commands: ReadonlyArray<string>;
   readonly patchBundle: string;
+  readonly report?: string;
 }
 
 export interface PolicyAuditInput {
@@ -188,6 +189,56 @@ export interface PolicyAuditEvent {
 export interface ControlPlaneMetrics {
   increment(name: string, value?: number): void;
   snapshot(): { counters: Record<string, number> };
+}
+
+export interface PolicyAuditBus {
+  publish: (event: PolicyAuditEvent) => void;
+  subscribe(listener: (event: PolicyAuditEvent) => void): () => void;
+}
+
+export interface CostSnapshot {
+  readonly proposalId: string;
+  readonly maxUsd: number;
+  readonly spentUsd: number;
+  readonly remainingUsd: number;
+}
+
+export function subscribePolicyAuditBus(): PolicyAuditBus {
+  const listeners = new Set<(event: PolicyAuditEvent) => void>();
+  return {
+    publish(event: PolicyAuditEvent): void {
+      for (const listener of listeners) {
+        listener(event);
+      }
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+
+export function renderCostPrometheus(
+  counters: { counters: Record<string, number> },
+  snapshot: CostSnapshot,
+): string {
+  const lines: string[] = [];
+  lines.push('# HELP rdma_cost_spent_usd USD already spent on this proposal');
+  lines.push('# TYPE rdma_cost_spent_usd gauge');
+  lines.push(`rdma_cost_spent_usd ${snapshot.spentUsd.toFixed(2)}`);
+  lines.push('# HELP rdma_cost_remaining_usd USD left on this proposal');
+  lines.push('# TYPE rdma_cost_remaining_usd gauge');
+  lines.push(`rdma_cost_remaining_usd ${snapshot.remainingUsd.toFixed(2)}`);
+  lines.push('# HELP rdma_cost_max_usd USD budget for this proposal');
+  lines.push('# TYPE rdma_cost_max_usd gauge');
+  lines.push(`rdma_cost_max_usd ${snapshot.maxUsd.toFixed(2)}`);
+  lines.push('# HELP rdma_cost_records Number of spend records recorded');
+  lines.push('# TYPE rdma_cost_records counter');
+  lines.push(`rdma_cost_records ${counters.counters.rdma_cost_records ?? 0}`);
+
+  return `${lines.join('\n')}\n`;
 }
 
 const RISK_ORDER: Record<RiskLevel, number> = {
@@ -458,6 +509,18 @@ export function publishPolicyAuditEvent(
   return event;
 }
 
+export function publishToPolicyAuditBus(
+  bus: PolicyAuditBus,
+  input: PolicyAuditInput,
+): PolicyAuditEvent {
+  const event = publishPolicyAuditEvent(input, () => undefined);
+  for (const listener of (bus as unknown as { _listeners?: Set<(event: PolicyAuditEvent) => void> })
+    ._listeners ?? new Set<(event: PolicyAuditEvent) => void>()) {
+    listener(event);
+  }
+  return event;
+}
+
 export function createControlPlaneMetrics(): ControlPlaneMetrics {
   const counters: Record<string, number> = {};
   return {
@@ -474,10 +537,126 @@ export function recordBudgetMetrics(
   snapshot: BudgetSnapshot,
   metrics: ControlPlaneMetrics,
 ): BudgetSnapshot {
-  metrics.increment('rdma.cost.records', snapshot.records.length);
-  metrics.increment('rdma.cost.spent_cents', Math.round(snapshot.spentUsd * 100));
-  metrics.increment('rdma.cost.remaining_cents', Math.round(snapshot.remainingUsd * 100));
+  metrics.increment('rdma_cost_records', snapshot.records.length);
+  metrics.increment('rdma_cost_spent_cents', Math.round(snapshot.spentUsd * 100));
+  metrics.increment('rdma_cost_remaining_cents', Math.round(snapshot.remainingUsd * 100));
   return snapshot;
+}
+
+export interface ControlPlanePanelInput {
+  readonly metrics: { counters: Record<string, number> };
+  readonly snapshot: CostSnapshot;
+  readonly mode: 'prom' | 'json' | 'tui';
+}
+
+export interface PolicyAuditBusAdapter {
+  publishPolicy(input: {
+    proposalId: string;
+    tool: string;
+    risk: RiskLevel;
+    allowed: boolean;
+    reason: string;
+  }): void;
+}
+
+export interface PolicyAuditBusContext {
+  readonly projectId: string;
+  readonly actor: string;
+  readonly nowIso?: () => string;
+}
+
+export interface PolicyAuditBusLike {
+  publish(event: {
+    kind: string;
+    proposalId: string;
+    projectId: string;
+    at: string;
+    payload?: Record<string, unknown>;
+  }): void;
+}
+
+export interface SandboxPreviewInput {
+  readonly workspaceRoot: string;
+  readonly proposalId: string;
+  readonly projectId?: string;
+  readonly testCommand?: string;
+  readonly files: ReadonlyArray<SandboxPatchFile>;
+}
+
+export function attachPolicyAuditToEventBus(
+  bus: PolicyAuditBusLike,
+  context: PolicyAuditBusContext,
+): PolicyAuditBusAdapter {
+  const now = context.nowIso ?? (() => new Date().toISOString());
+  return {
+    publishPolicy(input) {
+      bus.publish({
+        kind: 'proposal.updated',
+        proposalId: input.proposalId,
+        projectId: context.projectId,
+        at: now(),
+        payload: {
+          policyEvent: input.allowed ? 'tool.policy.allowed' : 'tool.policy.denied',
+          actor: context.actor,
+          tool: input.tool,
+          risk: input.risk,
+          reason: input.reason,
+        },
+      });
+    },
+  };
+}
+
+export function renderControlPlanePanel(input: ControlPlanePanelInput): string {
+  if (input.mode === 'prom') {
+    return renderCostPrometheus(input.metrics, input.snapshot);
+  }
+  if (input.mode === 'json') {
+    const payload = {
+      directions: ['A:delivery-sandbox', 'B:collaboration', 'C:tool-governance', 'D:cost-router'],
+      proposalId: input.snapshot.proposalId,
+      cost: {
+        proposalId: input.snapshot.proposalId,
+        maxUsd: input.snapshot.maxUsd,
+        spentUsd: input.snapshot.spentUsd,
+        remainingUsd: input.snapshot.remainingUsd,
+      },
+      metrics: input.metrics.counters,
+    };
+    return `${JSON.stringify(payload, null, 2)}\n`;
+  }
+  const lines = [
+    'RDMA control plane',
+    `proposal: ${input.snapshot.proposalId}`,
+    `cost: spent=${input.snapshot.spentUsd.toFixed(2)} USD remaining=${input.snapshot.remainingUsd.toFixed(2)} USD`,
+    `cost records: ${input.metrics.counters.rdma_cost_records ?? 0}`,
+    'directions: A:delivery-sandbox | B:collaboration | C:tool-governance | D:cost-router',
+  ];
+  return `${lines.join('\n')}\n`;
+}
+
+export function buildSandboxPreview(input: SandboxPreviewInput): SandboxPatchResult {
+  const requirement: DeliveryRequirement = {
+    proposalId: input.proposalId,
+    projectId: input.projectId ?? 'PRJ-20260621-001',
+    title: 'sandbox preview',
+    rawRequirement: 'dry-run sandbox preview',
+    scope: 'small',
+    priority: 'P2',
+  };
+  const plan = buildDeliveryPlan(requirement, {
+    workspaceRoot: input.workspaceRoot,
+    defaultTestCommand: input.testCommand ?? 'npm test',
+  });
+  const result = executeSandboxPatch(plan, {
+    files: input.files.map((file) => ({ path: file.path, content: file.content })),
+    testCommand: input.testCommand ?? 'npm test',
+  });
+  return {
+    ...result,
+    reason: result.allowed ? 'sandbox preview generated without writing to disk' : result.reason,
+    commands: [input.testCommand ?? 'npm test'],
+  };
 }
 
 export function formatCollaborationPanel(decisions: ReadonlyArray<CollaborationDecision>): string {

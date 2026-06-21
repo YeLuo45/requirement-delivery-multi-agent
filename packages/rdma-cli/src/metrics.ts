@@ -30,6 +30,7 @@ import { createResearchAgent } from '@rdma/research';
 interface ParsedMetricsFlags {
   format: 'human' | 'json' | 'prom';
   noRun: boolean;
+  cost: boolean;
 }
 
 /**
@@ -38,7 +39,7 @@ interface ParsedMetricsFlags {
  * the shared `parseArgs` in `run.ts`.
  */
 export function parseMetricsArgs(argv: ReadonlyArray<string>): ParsedMetricsFlags {
-  const flags: ParsedMetricsFlags = { format: 'human', noRun: true };
+  const flags: ParsedMetricsFlags = { format: 'human', noRun: true, cost: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === undefined) continue;
@@ -51,17 +52,16 @@ export function parseMetricsArgs(argv: ReadonlyArray<string>): ParsedMetricsFlag
       continue;
     }
     if (arg === '--no-run') {
-      // Explicit no-op form, kept for explicit-by-default callers
-      // and to match the README snippets.
       flags.noRun = true;
       continue;
     }
     if (arg === '--walk') {
-      // Explicit opt-in to drive a demo proposal through the full
-      // pipeline so counters/timings have non-zero samples. Without
-      // this flag the command is read-only and safe to run from any
-      // directory.
       flags.noRun = false;
+      continue;
+    }
+    if (arg === '--cost') {
+      flags.cost = true;
+      flags.format = 'prom';
       continue;
     }
     if (arg === '--help' || arg === '-h') {
@@ -162,6 +162,31 @@ export async function cmdMetrics(
     }
   }
   const snap = recorder.snapshot();
+  if (flags.cost) {
+    const {
+      createBudgetLedger,
+      createControlPlaneMetrics,
+      recordBudgetMetrics,
+      renderControlPlanePanel,
+    } = await import('@rdma/delivery-control');
+    const ledger = createBudgetLedger({
+      proposalId: 'rdma-metrics-cost',
+      maxUsd: 1,
+    });
+    recordBudgetMetrics(ledger.snapshot(), createControlPlaneMetrics());
+    const text = renderControlPlanePanel({
+      metrics: snap,
+      snapshot: {
+        proposalId: 'rdma-metrics-cost',
+        maxUsd: 1,
+        spentUsd: 0,
+        remainingUsd: 1,
+      },
+      mode: 'prom',
+    });
+    console.log(text);
+    return;
+  }
   if (flags.format === 'json') {
     console.log(JSON.stringify(snap, null, 2));
     return;

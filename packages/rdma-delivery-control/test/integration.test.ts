@@ -125,9 +125,9 @@ describe('delivery control integrations', () => {
     const snapshot = recordBudgetMetrics(ledger.snapshot(), metrics);
 
     assert.equal(snapshot.remainingUsd, 0.35);
-    assert.equal(metrics.snapshot().counters['rdma.cost.records'], 2);
-    assert.equal(metrics.snapshot().counters['rdma.cost.spent_cents'], 65);
-    assert.equal(metrics.snapshot().counters['rdma.cost.remaining_cents'], 35);
+    assert.equal(metrics.snapshot().counters.rdma_cost_records, 2);
+    assert.equal(metrics.snapshot().counters.rdma_cost_spent_cents, 65);
+    assert.equal(metrics.snapshot().counters.rdma_cost_remaining_cents, 35);
   });
 
   it('formats collaboration decisions for TUI and web panels', () => {

@@ -15,6 +15,17 @@ interface AuditEntry {
   detail: Record<string, unknown>;
 }
 
+interface ControlPlanePayload {
+  directions: string[];
+  collaboration: string;
+  cost: { proposalId: string; maxUsd: number; spentUsd: number; remainingUsd: number };
+  decisions: Array<{
+    role: string;
+    permissions: { canRead: boolean; canComment: boolean; canModifyArtifacts: boolean };
+    lease?: { expiresAt: string };
+  }>;
+}
+
 async function readJsonl(filePath: string): Promise<AuditEntry[]> {
   try {
     const content = await fs.readFile(filePath, 'utf8');
@@ -175,6 +186,69 @@ export function rdmaApiPlugin(dataRoot: string): Plugin {
           res.end(JSON.stringify(proposal));
         } catch (err) {
           res.statusCode = 400;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+
+      server.middlewares.use('/api/control-plane/cost', async (_req, res) => {
+        try {
+          const { renderControlPlanePanel } = await import('@rdma/delivery-control');
+          const text = renderControlPlanePanel({
+            metrics: { counters: {} },
+            snapshot: {
+              proposalId: 'panel',
+              maxUsd: 1,
+              spentUsd: 0,
+              remainingUsd: 1,
+            },
+            mode: 'prom',
+          });
+          res.setHeader('Content-Type', 'text/plain; version=0.0.4');
+          res.end(text);
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+
+      server.middlewares.use('/api/control-plane/panel', async (_req, res) => {
+        try {
+          const { formatCollaborationPanel } = await import('@rdma/delivery-control');
+          const payload: ControlPlanePayload = {
+            directions: [
+              'A:delivery-sandbox',
+              'B:collaboration',
+              'C:tool-governance',
+              'D:cost-router',
+            ],
+            collaboration: formatCollaborationPanel([
+              {
+                allowed: true,
+                role: 'viewer',
+                reason: 'seed',
+                permissions: { canRead: true, canComment: false, canModifyArtifacts: false },
+                lease: {
+                  holderId: 'seed',
+                  proposalId: 'panel',
+                  expiresAt: '1970-01-01T00:00:00.000Z',
+                },
+              },
+            ]),
+            cost: { proposalId: 'panel', maxUsd: 1, spentUsd: 0, remainingUsd: 1 },
+            decisions: [
+              {
+                role: 'viewer',
+                permissions: { canRead: true, canComment: false, canModifyArtifacts: false },
+                lease: { expiresAt: '1970-01-01T00:00:00.000Z' },
+              },
+            ],
+          };
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(payload));
+        } catch (err) {
+          res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
         }

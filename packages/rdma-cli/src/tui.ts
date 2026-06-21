@@ -94,6 +94,28 @@ export async function renderTuiSnapshot(storageRoot = STORAGE_ROOT): Promise<str
 }
 
 /**
+ * Render a one-shot snapshot of the control plane summary. Reuses the
+ * pure delivery-control helpers so the TUI text matches CLI/Web output.
+ */
+export async function renderTuiControlPlane(storageRoot = STORAGE_ROOT): Promise<string> {
+  const { renderControlPlanePanel } = await import('@rdma/delivery-control');
+  const storage = new Storage({ root: storageRoot });
+  await storage.init();
+  const proposals = await storage.listProposals();
+  const proposalId = proposals[0]?.id ?? 'panel';
+  return renderControlPlanePanel({
+    metrics: { counters: { rdma_cost_records: proposals.length } },
+    snapshot: {
+      proposalId,
+      maxUsd: 1,
+      spentUsd: 0,
+      remainingUsd: 1,
+    },
+    mode: 'tui',
+  });
+}
+
+/**
  * Render a single proposal's full detail (id, status, handoff, artifacts).
  * Throws `ProposalNotFoundError` when the id is unknown — callers (the
  * interactive TUI, the CLI `show` command, MCP `rdma.show`) translate
@@ -226,6 +248,10 @@ export async function cmdTui(argv: string[]): Promise<void> {
     process.stdout.write(await renderTuiConfig());
     return;
   }
+  if ((flags as { controlPlane?: boolean }).controlPlane === true) {
+    process.stdout.write(await renderTuiControlPlane());
+    return;
+  }
 
   const showId = typeof flags.show === 'string' ? flags.show : positional[0];
   if (typeof showId === 'string' && showId.length > 0) {
@@ -238,7 +264,7 @@ export async function cmdTui(argv: string[]): Promise<void> {
   const rl = readline.createInterface({ input, output });
   try {
     process.stdout.write(await renderTuiSnapshot());
-    process.stdout.write('\n[l]ist  [s]how <id>  [c]onfig  [n]ew  [q]uit\n');
+    process.stdout.write('\n[l]ist  [s]how <id>  [c]onfig  [p]lane  [n]ew  [q]uit\n');
     while (true) {
       const raw = (await rl.question('> ')).trim();
       if (raw.length === 0) continue;
@@ -277,6 +303,10 @@ export async function cmdTui(argv: string[]): Promise<void> {
       }
       if (cmd === 'c' || cmd === 'config') {
         process.stdout.write(`\n${await renderTuiConfig()}`);
+        continue;
+      }
+      if (cmd === 'p' || cmd === 'plane') {
+        process.stdout.write(`\n${await renderTuiControlPlane()}`);
         continue;
       }
       if (cmd === 'n' || cmd === 'new') {

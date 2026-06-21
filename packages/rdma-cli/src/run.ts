@@ -30,6 +30,7 @@ import { buildArtifactPatch, cmdDiff, diffInspectData, lineDiff, unifiedDiff } f
 import { buildEventsData, buildInspectData, cmdEvents, cmdInspect } from './inspect.js';
 import { cmdMetrics, parseMetricsArgs, renderMetricsText } from './metrics.js';
 import { cmdReplay, replayProposal } from './replay.js';
+import { cmdSandboxApply } from './sandbox-cmd.js';
 import { cmdServe, startServe } from './serve.js';
 import { cmdTui, renderTuiSnapshot } from './tui.js';
 export { cmdReplay, replayProposal } from './replay.js';
@@ -474,6 +475,17 @@ export async function run(command: string, argv: string[]): Promise<void> {
       return cmdMetrics(argv);
     case 'tui':
       return cmdTui(argv);
+    case 'sandbox': {
+      const sub = argv[0];
+      if (sub !== 'apply') {
+        console.error(`Unknown sandbox subcommand: ${sub ?? '(none)'} (expected apply)`);
+        process.exit(1);
+      }
+      return cmdSandboxApply(argv.slice(1), {
+        stdout: process.stdout,
+        stderr: process.stderr,
+      });
+    }
     case 'config': {
       // Dispatch the nested subcommand. argv[0] is one of
       // `show | validate | init | path`. We re-slice and pass the tail.

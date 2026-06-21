@@ -89,6 +89,13 @@ Usage:
                                  with pm / dev / qa stubs
         path                     print the resolved .rdma root
 
+  rdma sandbox apply --workspace-root <path> --proposal <id> --files <path>=<content>
+                       [--project <id>] [--test-command <cmd>] [--dry-run]
+      Apply a file patch inside the proposal's isolated sandbox and
+      print a reviewable patch bundle summary. Refuses writes that
+      escape the sandbox root. Use --dry-run to preview without
+      writing to disk.
+
   rdma inspect <proposal-id>
       Show the handoff chain, artifacts, and audit timeline of a proposal.
 
@@ -135,6 +142,7 @@ export async function main(
     case 'metrics':
     case 'tui':
     case 'config':
+    case 'sandbox':
       await runFn(cmd, args.slice(1));
       return 0;
     default: {
