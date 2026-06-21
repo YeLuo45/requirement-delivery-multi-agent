@@ -23,6 +23,14 @@ for pkg in packages/*; do
 done
 
 echo
+echo "== root scripts (release tooling) =="
+if compgen -G "scripts/test/*.test.mjs" > /dev/null; then
+  if ! (node --test scripts/test/*.test.mjs 2>&1 | tail -5); then
+    fail=1
+  fi
+fi
+
+echo
 echo "== root e2e =="
 if ! (node --test --import tsx scripts/e2e-hello-world.test.ts 2>&1 | tail -10); then
   fail=1

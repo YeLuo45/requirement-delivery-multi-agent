@@ -150,6 +150,12 @@ npm run cli -- diff <proposal-id-a> <proposal-id-b>
 
 # 重放单个 proposal 的 audit log 事件流（调试用）
 npm run cli -- replay <proposal-id>
+
+# 看当前 metrics snapshot（默认 read-only；`--walk` 跑一次完整管线以填充 counters）
+npm run cli -- metrics
+npm run cli -- metrics --no-run --format prom
+npm run cli -- metrics --no-run --format json
+npm run cli -- metrics --walk
 ```
 
 ### 5. 跑示例

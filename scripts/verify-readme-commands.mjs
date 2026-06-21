@@ -115,6 +115,10 @@ function isStubOnly(command) {
   if (/\bnpm\s+run\s+verify:readme\b/.test(command)) return true;
   if (/\bnpm\s+run\s+doctor\b/.test(command)) return true;
   if (/\bnpm\s+run\s+smoke:serve\b/.test(command)) return true;
+  // scripts/bump-version.mjs is invoked from the release workflow
+  // and not from any README snippet; keep it out of the README
+  // honesty check by treating it as a stub.
+  if (/\bbump-version\b/.test(command)) return true;
   // README snippets that contain placeholder paths like `/path/to/data`
   // are templates, not runnable commands. The user has to substitute
   // a real directory before these can succeed.

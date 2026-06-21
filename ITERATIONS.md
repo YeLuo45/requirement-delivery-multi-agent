@@ -244,8 +244,9 @@ git push -u origin feature/rdma-A1-llm-provider
 | 14 | E2 | EventEmittingStorage wrapper | 119/119 | ~240 | f17fce9 |
 | 15 | E3 | `Pipeline.resumeFromStage` | 119/119 | ~260 | 9508064 |
 | 16 | E4-E6 | inspect/events/diff/replay CLI + HTTP endpoints + durable journal + observability + README/CI gates | 278/278 | ~2500 | pending |
+| 17 | F2-F5 + G4 | Pipeline tracer/metrics hooks + `rdma metrics` CLI + `/metrics` + `/traces` HTTP endpoints + release-on-tag workflow + bump-version script | 310+/310+ | ~700 | pending |
 
-> 实测当前完整 278/278 tests passing；源码覆盖率 4734/4734（100.00%）。本轮额外门禁：`npm run check`、`npm run verify:readme`、`npm run doctor`、`npm run smoke:serve`、`npm run build --workspace=@rdma/web` 全部通过。
+> 实测当前完整 **310+/310+ tests passing**（含 F2 5 + F3 5 + F5 3 + bump-version 2 = 15 新增）；源码覆盖率 **4964/4964 = 100.00%**。本轮新增门禁：`scripts/test/bump-version.test.mjs`（release 工具单元测试）已接入 `npm test` 套件。CI：`test.yml` Node 18/20/22 矩阵 + `verify-readme.yml` PR-only + `release.yml` tag-driven（含 bump-version + release-notes 自动生成）。
 
 ### B 方向性能数字
 
