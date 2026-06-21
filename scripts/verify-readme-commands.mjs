@@ -119,6 +119,10 @@ function isStubOnly(command) {
   // and not from any README snippet; keep it out of the README
   // honesty check by treating it as a stub.
   if (/\bbump-version\b/.test(command)) return true;
+  // scripts/smoke-cross-platform.mjs runs in CI only; verify:readme
+  // is a local-only gate and the script would race with the other
+  // smoke jobs on shared tmpdirs.
+  if (/smoke-cross-platform/.test(command)) return true;
   // README snippets that contain placeholder paths like `/path/to/data`
   // are templates, not runnable commands. The user has to substitute
   // a real directory before these can succeed.

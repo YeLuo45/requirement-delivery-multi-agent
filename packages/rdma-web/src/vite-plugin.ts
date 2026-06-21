@@ -36,10 +36,150 @@ function handoffChain(entries: AuditEntry[]): string[] {
   return chain;
 }
 
+async function readBody(req: {
+  on: (event: string, handler: (chunk?: Buffer | Error) => void) => unknown;
+  destroy?: () => void;
+}): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk?: Buffer | Error) => {
+      if (Buffer.isBuffer(chunk)) chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', (err?: Buffer | Error) => reject(err));
+  });
+}
+
+function datePrefix(date: Date): string {
+  return `${date.getUTCFullYear()}${(date.getUTCMonth() + 1).toString().padStart(2, '0')}${date
+    .getUTCDate()
+    .toString()
+    .padStart(2, '0')}`;
+}
+
+function nextSequence(ids: ReadonlyArray<string>, prefix: string): number {
+  let max = 0;
+  for (const id of ids) {
+    if (!id.startsWith(prefix)) continue;
+    const n = Number(id.slice(prefix.length));
+    if (Number.isFinite(n)) max = Math.max(max, n);
+  }
+  return max + 1;
+}
+
+async function createLocalProposal(dataRoot: string, body: unknown) {
+  if (typeof body !== 'object' || body === null) throw new Error('expected object body');
+  const title = (body as { title?: unknown }).title;
+  const requirement = (body as { requirement?: unknown }).requirement;
+  const sourceUrl = (body as { sourceUrl?: unknown }).sourceUrl;
+  if (typeof title !== 'string' || title.trim().length === 0) throw new Error('title is required');
+  if (typeof requirement !== 'string' || requirement.trim().length === 0) {
+    throw new Error('requirement is required');
+  }
+
+  await fs.mkdir(path.join(dataRoot, 'proposals'), { recursive: true });
+  await fs.mkdir(path.join(dataRoot, 'audit'), { recursive: true });
+  await fs
+    .writeFile(
+      path.join(dataRoot, 'meta.json'),
+      JSON.stringify({ version: 1, createdAt: new Date().toISOString() }, null, 2),
+      { flag: 'wx' },
+    )
+    .catch(() => undefined);
+  const existing = await listLocalProposals(dataRoot);
+  const now = new Date();
+  const prefix = datePrefix(now);
+  const proposalSeq = nextSequence(
+    existing.map((p) => p.id),
+    `P-${prefix}-`,
+  );
+  const projectSeq = nextSequence(
+    existing.map((p) => p.projectId),
+    `PRJ-${prefix}-`,
+  );
+  const timestamp = now.toISOString();
+  const proposal = {
+    id: `P-${prefix}-${proposalSeq.toString().padStart(3, '0')}`,
+    projectId: `PRJ-${prefix}-${projectSeq.toString().padStart(3, '0')}`,
+    title: title.trim(),
+    rawRequirement: requirement.trim(),
+    ...(typeof sourceUrl === 'string' && sourceUrl.trim().length > 0
+      ? { sourceUrl: sourceUrl.trim() }
+      : {}),
+    status: 'research_direction_pending',
+    owner: null,
+    clarificationRound: 0,
+    artifacts: [],
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    tags: {},
+  };
+  const proposalDir = path.join(dataRoot, 'proposals', proposal.projectId);
+  await fs.mkdir(proposalDir, { recursive: true });
+  await fs.writeFile(
+    path.join(proposalDir, `${proposal.id}.json`),
+    JSON.stringify(proposal, null, 2),
+  );
+  const auditDir = path.join(dataRoot, 'audit', proposal.projectId);
+  await fs.mkdir(auditDir, { recursive: true });
+  await fs.appendFile(
+    path.join(auditDir, `${proposal.id}.jsonl`),
+    `${JSON.stringify({
+      id: `audit-${Date.now()}`,
+      proposalId: proposal.id,
+      projectId: proposal.projectId,
+      actor: 'system',
+      action: 'proposal.create',
+      at: timestamp,
+      detail: { title: proposal.title, status: proposal.status, projectId: proposal.projectId },
+    })}\n`,
+    'utf8',
+  );
+  return proposal;
+}
+
+async function listLocalProposals(
+  dataRoot: string,
+): Promise<Array<{ id: string; projectId: string; createdAt: string }>> {
+  const proposals: Array<{ id: string; projectId: string; createdAt: string }> = [];
+  const projects = await fs.readdir(path.join(dataRoot, 'proposals')).catch(() => []);
+  for (const pid of projects) {
+    const dir = path.join(dataRoot, 'proposals', pid);
+    const files = await fs.readdir(dir).catch(() => []);
+    for (const f of files) {
+      if (!f.endsWith('.json')) continue;
+      const content = await fs.readFile(path.join(dir, f), 'utf8');
+      proposals.push(JSON.parse(content));
+    }
+  }
+  proposals.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return proposals;
+}
+
 export function rdmaApiPlugin(dataRoot: string): Plugin {
   return {
     name: 'rdma-api',
     configureServer(server) {
+      server.middlewares.use('/api/proposals/create', async (req, res) => {
+        if (req.method !== 'POST') {
+          res.statusCode = 405;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'method not allowed' }));
+          return;
+        }
+        try {
+          const raw = await readBody(req as never);
+          const proposal = await createLocalProposal(dataRoot, JSON.parse(raw));
+          res.statusCode = 201;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(proposal));
+        } catch (err) {
+          res.statusCode = 400;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+
       server.middlewares.use('/api/proposals', async (_req, res) => {
         try {
           const proposals: unknown[] = [];

@@ -120,7 +120,7 @@ export function useProposals() {
   const onRealtimeEvent = useCallback(() => setReloadKey((k) => k + 1), []);
   useRealtime({ url: defaultRealtimeUrl(), onEvent: onRealtimeEvent });
 
-  return { proposals, source, error };
+  return { proposals, source, error, reload: onRealtimeEvent };
 }
 
 export function useProposalDetail(id: string | undefined) {

@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
@@ -13,7 +14,6 @@ function findMonorepoRoot(): string | null {
   for (let i = 0; i < 8; i++) {
     const pkgPath = path.join(dir, 'package.json');
     try {
-      const fs = require('node:fs') as typeof import('node:fs');
       const content = fs.readFileSync(pkgPath, 'utf8');
       const parsed: unknown = JSON.parse(content);
       if (typeof parsed === 'object' && parsed !== null && 'workspaces' in parsed) {

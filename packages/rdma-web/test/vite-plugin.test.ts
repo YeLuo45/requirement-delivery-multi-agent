@@ -108,6 +108,23 @@ function fakeRequest(url, method = 'GET') {
   return { url, method, headers: {} };
 }
 
+function fakeJsonRequest(url, body) {
+  const chunks = [Buffer.from(JSON.stringify(body))];
+  return {
+    url,
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    on(event, handler) {
+      if (event === 'data') {
+        for (const chunk of chunks) handler(chunk);
+      }
+      if (event === 'end') handler();
+      return this;
+    },
+    destroy() {},
+  };
+}
+
 function newResponse() {
   return new MemoryResponse();
 }
@@ -122,6 +139,7 @@ function findHandler(plugin, rootOverride) {
       use(route, handler) {
         if (route === '/api/proposals') this._list = handler;
         else if (route === '/api/proposals/') this._detail = handler;
+        else if (route === '/api/proposals/create') this._create = handler;
       },
     },
   };
@@ -129,6 +147,7 @@ function findHandler(plugin, rootOverride) {
   return {
     list: fakeServer.middlewares._list,
     detail: fakeServer.middlewares._detail,
+    create: fakeServer.middlewares._create,
   };
 }
 
@@ -197,6 +216,36 @@ describe('rdma-web vite plugin', () => {
       await list(req, res, () => undefined);
       assert.equal(res.statusCode, 200);
       assert.deepEqual(JSON.parse(res.body), []);
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+
+  it('POST /api/proposals/create creates a local proposal that appears in the list', async () => {
+    const fresh = mkdtempSync(path.join(tmpdir(), 'rdma-web-create-'));
+    try {
+      const mod = await loadPlugin();
+      const { list, create } = findHandler(mod, fresh);
+      assert.equal(typeof create, 'function');
+      const createReq = fakeJsonRequest('/api/proposals/create', {
+        title: 'Created from web',
+        requirement: 'Support browser-created proposals.',
+      });
+      const createRes = newResponse();
+      await create(createReq, createRes, () => undefined);
+      assert.equal(createRes.statusCode, 201);
+      const created = JSON.parse(createRes.body);
+      assert.match(created.id, /^P-/);
+      assert.match(created.projectId, /^PRJ-/);
+      assert.equal(created.title, 'Created from web');
+      assert.equal(created.status, 'research_direction_pending');
+
+      const listReq = fakeRequest('/api/proposals');
+      const listRes = newResponse();
+      await list(listReq, listRes, () => undefined);
+      const proposals = JSON.parse(listRes.body);
+      assert.equal(proposals.length, 1);
+      assert.equal(proposals[0].id, created.id);
     } finally {
       rmSync(fresh, { recursive: true, force: true });
     }

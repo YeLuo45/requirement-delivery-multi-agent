@@ -317,3 +317,41 @@ tr:hover {
   display: inline-block;
   margin-top: 16px;
 }
+
+.proposal-form {
+  display: grid;
+  gap: 12px;
+}
+
+.proposal-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.proposal-form input,
+.proposal-form textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.proposal-form button {
+  width: fit-content;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent-2);
+  padding: 9px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.proposal-form button:hover {
+  background: rgba(88, 166, 255, 0.22);
+}

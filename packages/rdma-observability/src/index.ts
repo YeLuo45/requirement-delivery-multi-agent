@@ -80,3 +80,5 @@ export { createTracer, setGlobalTracer, getGlobalTracer, getGlobalExporter } fro
 export { createInMemoryMetrics } from './metrics.js';
 export { setOtelAdapter, getOtelAdapter, resetOtelAdapter } from './otel-adapter.js';
 export type { OtelAdapter } from './otel-adapter.js';
+export { OtelSdkAdapter } from './otel-sdk-adapter.js';
+export type { OtelSdkAdapterOptions } from './otel-sdk-adapter.js';

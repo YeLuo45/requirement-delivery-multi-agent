@@ -127,6 +127,10 @@ describe('rdma cli entry point', () => {
       'serve',
       'inspect',
       'events',
+      'diff',
+      'replay',
+      'metrics',
+      'tui',
     ];
     for (const cmd of expected) {
       const { io } = makeIo();

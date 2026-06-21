@@ -30,7 +30,9 @@ import { buildEventsData, buildInspectData, cmdEvents, cmdInspect } from './insp
 import { cmdMetrics, parseMetricsArgs, renderMetricsText } from './metrics.js';
 import { cmdReplay, replayProposal } from './replay.js';
 import { cmdServe, startServe } from './serve.js';
+import { cmdTui, renderTuiSnapshot } from './tui.js';
 export { cmdReplay, replayProposal } from './replay.js';
+export { cmdTui, renderTuiSnapshot } from './tui.js';
 export {
   cmdDiff,
   diffInspectData,
@@ -426,6 +428,8 @@ export async function run(command: string, argv: string[]): Promise<void> {
       return cmdReplay(argv);
     case 'metrics':
       return cmdMetrics(argv);
+    case 'tui':
+      return cmdTui(argv);
     default:
       console.error(`Unknown command: ${command}`);
       process.exit(1);

@@ -10,6 +10,7 @@
  *   rdma reset                                               wipe local storage
  *   rdma demo                                                run the bootstrap demo
  *   rdma serve [--port N] [--host IP] [--storage json|sqlite] start a long-running daemon
+ *   rdma tui [--once]                                        terminal proposal browser
  *   rdma inspect <proposal-id>                               show proposal handoff + audit timeline
  *   rdma events [--proposal <id>] [--limit N] [--since-seq M] stream audit-derived events
  *   rdma help                                                this help
@@ -72,6 +73,10 @@ Usage:
       Default storage is json. Use --storage sqlite to switch the
       daemon's backend at boot.
 
+  rdma tui [--once]
+      Open a terminal UI for listing and creating local proposals.
+      Use --once to print a non-interactive snapshot and exit.
+
   rdma inspect <proposal-id>
       Show the handoff chain, artifacts, and audit timeline of a proposal.
 
@@ -116,6 +121,7 @@ export async function main(
     case 'diff':
     case 'replay':
     case 'metrics':
+    case 'tui':
       await runFn(cmd, args.slice(1));
       return 0;
     default: {
