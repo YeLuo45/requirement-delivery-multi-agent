@@ -9,6 +9,9 @@
  *   GET  /health             → { status: "ok", backend, wsClients }
  *   GET  /proposals          → list of summaries
  *   GET  /proposals/:id      → one proposal + audit chain
+ *   GET  /inspect/:id        → JSON inspect view (handoff + audit timeline)
+ *   GET  /events?proposal=…&limit=N&since-seq=M
+ *                            → JSON event stream (audit-derived)
  *   POST /deliver            → { title, requirement, sourceUrl?, useLlm? }
  *                              → 202 { id, projectId, status }   (async)
  *                              → 200 { id, projectId, status, artifacts }  (sync when ?wait=1)
@@ -24,12 +27,14 @@
  * the server is running. SIGINT / SIGTERM trigger a graceful close.
  */
 
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { type IncomingMessage, type ServerResponse, createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { buildDeps, SHIPPED_ROOT, STORAGE_ROOT } from './run.js';
-import { RealtimeServer } from '@rdma/realtime';
 import type { Proposal } from '@rdma/core';
 import { ProposalNotFoundError } from '@rdma/core';
+import { DurableJournal, isResumeableStage } from '@rdma/persistence';
+import { RealtimeServer } from '@rdma/realtime';
+import { buildEventsData, buildInspectData } from './inspect.js';
+import { SHIPPED_ROOT, STORAGE_ROOT, buildDeps } from './run.js';
 
 interface ParsedFlags {
   positional: string[];
@@ -40,7 +45,8 @@ function parseArgs(argv: string[]): ParsedFlags {
   const positional: string[] = [];
   const flags: Record<string, string | boolean> = {};
   for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
+    const arg = argv[i];
+    if (arg === undefined) continue;
     if (arg.startsWith('--')) {
       const eq = arg.indexOf('=');
       if (eq !== -1) {
@@ -137,20 +143,70 @@ export interface ServeHandle {
   httpServer: import('node:http').Server;
   realtime: RealtimeServer;
   shutdown: () => Promise<void>;
+  /** Number of proposals resumed from a previous run's journal. */
+  resumed: number;
 }
 
 export async function startServe(opts: ServeOptions): Promise<ServeHandle> {
-  if (opts.storageRoot) process.env['RDMA_STORAGE_ROOT'] = opts.storageRoot;
-  if (opts.shippedRoot) process.env['RDMA_SHIPPED_ROOT'] = opts.shippedRoot;
-  const { pipeline, storage: store, audit, bus } = await buildDeps(
-    opts.storageRoot,
-    { useLlm: opts.useLlm, storage: opts.storage },
-  );
+  if (opts.storageRoot) process.env.RDMA_STORAGE_ROOT = opts.storageRoot;
+  if (opts.shippedRoot) process.env.RDMA_SHIPPED_ROOT = opts.shippedRoot;
+  const {
+    pipeline,
+    storage: store,
+    audit,
+    bus,
+  } = await buildDeps(opts.storageRoot, { useLlm: opts.useLlm, storage: opts.storage });
 
   const httpServer = createServer((req, res) => {
-    void handleHttp(req, res, { pipeline, storage: store, audit, bus });
+    void handleHttp(req, res, {
+      pipeline,
+      storage: store,
+      audit,
+      bus,
+      storageRoot: opts.storageRoot,
+    });
   });
   const realtime = new RealtimeServer({ bus, httpServer, path: '/ws' });
+
+  // Wire a durable journal for crash recovery. The journal appends
+  // every `proposal.*` event to a per-proposal JSONL so the next
+  // daemon boot can replay them to late subscribers.
+  const journalRoot = opts.storageRoot ?? STORAGE_ROOT;
+  const journal = new DurableJournal(journalRoot);
+  await journal.init();
+  const journalSub = bus.subscribe('*', async (ev) => {
+    try {
+      await journal.append({
+        proposalId: ev.proposalId,
+        projectId: ev.projectId,
+        kind: ev.kind,
+        at: ev.at,
+        payload: ev.payload ?? {},
+      });
+      if (ev.kind === 'proposal.updated' && typeof ev.payload?.status === 'string') {
+        if (journal.isTerminal(ev.payload.status as string)) {
+          await journal.discard(ev.projectId, ev.proposalId);
+        }
+      }
+    } catch {
+      // ignore — journal is best-effort
+    }
+  });
+
+  // Boot-time replay: any in-flight proposal from the previous run
+  // is scheduled to resume from its current stage. The pipeline
+  // already writes a `pipeline.resumed` audit entry, which the
+  // journal will append like any other event.
+  const resumeSummary = await bootResume(pipeline, journal, bus);
+  if (resumeSummary.resumed > 0) {
+    console.error(
+      `[rdma] resumed ${resumeSummary.resumed} in-flight proposal(s) from previous run`,
+    );
+  } else if (resumeSummary.skipped > 0) {
+    console.error(`[rdma] boot resume: ${resumeSummary.skipped} terminal proposal(s) skipped`);
+  }
+  // Capture for the unsubscribe so shutdown can clean up.
+  void journalSub;
 
   await new Promise<void>((resolve, reject) => {
     httpServer.once('error', reject);
@@ -163,11 +219,13 @@ export async function startServe(opts: ServeOptions): Promise<ServeHandle> {
   const boundPort = addr ? addr.port : opts.port;
   const boundHost = addr ? addr.address : opts.host;
   console.error(`[rdma] serve listening on http://${boundHost}:${boundPort}`);
-  console.error(`[rdma]           health:    GET  /health`);
-  console.error(`[rdma]           list:      GET  /proposals`);
-  console.error(`[rdma]           detail:    GET  /proposals/:id`);
-  console.error(`[rdma]           deliver:   POST /deliver {title,requirement}`);
-  console.error(`[rdma]           realtime:  GET  /ws`);
+  console.error('[rdma]           health:    GET  /health');
+  console.error('[rdma]           list:      GET  /proposals');
+  console.error('[rdma]           detail:    GET  /proposals/:id');
+  console.error('[rdma]           inspect:   GET  /inspect/:id');
+  console.error('[rdma]           events:    GET  /events?proposal=...&limit=...&since-seq=...');
+  console.error('[rdma]           deliver:   POST /deliver {title,requirement}');
+  console.error('[rdma]           realtime:  GET  /ws');
   console.error(`[rdma]           storage:   ${store.backendName}`);
 
   const shutdown = async (): Promise<void> => {
@@ -184,15 +242,16 @@ export async function startServe(opts: ServeOptions): Promise<ServeHandle> {
     httpServer,
     realtime,
     shutdown,
+    resumed: resumeSummary.resumed,
   };
 }
 
 export async function cmdServe(argv: string[]): Promise<void> {
   const { flags } = parseArgs(argv);
-  const port = Number(flags['port'] ?? 47555);
-  const host = typeof flags['host'] === 'string' ? (flags['host'] as string) : '127.0.0.1';
+  const port = Number(flags.port ?? 47555);
+  const host = typeof flags.host === 'string' ? (flags.host as string) : '127.0.0.1';
   const storage = ((): 'json' | 'sqlite' => {
-    const raw = typeof flags['storage'] === 'string' ? (flags['storage'] as string) : undefined;
+    const raw = typeof flags.storage === 'string' ? (flags.storage as string) : undefined;
     if (raw === 'json' || raw === 'sqlite') return raw;
     return 'json';
   })();
@@ -218,6 +277,44 @@ interface HttpCtx {
   storage: import('@rdma/core').StorageDriver;
   audit: import('@rdma/core').AuditLog;
   bus: import('@rdma/persistence').EventBus;
+  storageRoot?: string;
+}
+
+/**
+ * Boot-time crash-recovery routine. Walks every project on disk,
+ * classifies proposals by their last recorded stage, and resumes the
+ * in-flight ones. Terminal proposals are skipped and their journal
+ * files are discarded so the next boot stays cheap.
+ */
+async function bootResume(
+  pipeline: import('@rdma/coordinator').Pipeline,
+  journal: DurableJournal,
+  bus: import('@rdma/persistence').EventBus,
+): Promise<{ resumed: number; skipped: number }> {
+  let resumed = 0;
+  let skipped = 0;
+  try {
+    const projects = await pipeline.storage.listProjects();
+    for (const projectId of projects) {
+      const proposals = await pipeline.storage.listProposals(projectId);
+      for (const p of proposals) {
+        if (!isResumeableStage(p.status)) {
+          await journal.discard(p.projectId, p.id);
+          skipped++;
+          continue;
+        }
+        try {
+          await pipeline.resumeFromStage(p.id, p.status);
+          resumed++;
+        } catch {
+          skipped++;
+        }
+      }
+    }
+  } catch {
+    // Storage might be empty; nothing to do.
+  }
+  return { resumed, skipped };
 }
 
 async function handleHttp(req: IncomingMessage, res: ServerResponse, ctx: HttpCtx): Promise<void> {
@@ -244,7 +341,11 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse, ctx: HttpCt
 
   const detailMatch = path.match(/^\/proposals\/([A-Za-z0-9_-]+)$/);
   if (detailMatch && method === 'GET') {
-    const id = detailMatch[1]!;
+    const id = detailMatch[1];
+    if (id === undefined) {
+      sendJson(res, 404, { error: 'proposal id missing' });
+      return;
+    }
     try {
       const proposal = await ctx.storage.getProposal(id);
       const chain = await ctx.audit.handoffChain(proposal.id, proposal.projectId);
@@ -298,6 +399,57 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse, ctx: HttpCt
       sendJson(res, 200, summarize(final));
     } catch (err) {
       sendJson(res, 500, { error: String(err), id: created.id });
+    }
+    return;
+  }
+
+  // /inspect/:id — JSON form of the inspect view (handoff chain + audit timeline)
+  const inspectMatch = path.match(/^\/inspect\/([A-Za-z0-9_-]+)$/);
+  if (inspectMatch && method === 'GET') {
+    const id = inspectMatch[1];
+    if (id === undefined) {
+      sendJson(res, 404, { error: 'proposal id missing' });
+      return;
+    }
+    try {
+      const data = await buildInspectData(id, { storageRoot: ctx.storageRoot });
+      sendJson(res, 200, data);
+    } catch (err) {
+      if (err instanceof Error && /not found/.test(err.message)) {
+        sendJson(res, 404, { error: err.message, id });
+      } else {
+        sendJson(res, 500, { error: String(err) });
+      }
+    }
+    return;
+  }
+
+  // /events?proposal=<id>&limit=N&since-seq=M — JSON event stream
+  if (path === '/events' && method === 'GET') {
+    const proposalId = url.searchParams.get('proposal') ?? undefined;
+    const limitRaw = url.searchParams.get('limit');
+    const sinceSeqRaw = url.searchParams.get('since-seq');
+    const limit = limitRaw !== null ? Number(limitRaw) : 50;
+    const sinceSeq = sinceSeqRaw !== null ? Number(sinceSeqRaw) : 0;
+    if (Number.isNaN(limit) || limit <= 0) {
+      sendJson(res, 400, { error: '--limit must be a positive integer' });
+      return;
+    }
+    if (Number.isNaN(sinceSeq) || sinceSeq < 0) {
+      sendJson(res, 400, { error: '--since-seq must be a non-negative integer' });
+      return;
+    }
+    try {
+      const data = await buildEventsData(proposalId, limit, sinceSeq, {
+        storageRoot: ctx.storageRoot,
+      });
+      if (data.proposalNotFound) {
+        sendJson(res, 404, { error: 'proposal not found', id: proposalId });
+        return;
+      }
+      sendJson(res, 200, data);
+    } catch (err) {
+      sendJson(res, 500, { error: String(err) });
     }
     return;
   }

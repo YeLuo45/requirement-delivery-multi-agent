@@ -10,67 +10,32 @@
  *   rdma reset                                               wipe local storage
  *   rdma demo                                                run the bootstrap demo
  *   rdma serve [--port N] [--host IP] [--storage json|sqlite] start a long-running daemon
+ *   rdma inspect <proposal-id>                               show proposal handoff + audit timeline
+ *   rdma events [--proposal <id>] [--limit N] [--since-seq M] stream audit-derived events
  *   rdma help                                                this help
  */
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AgentRegistry, AuditLog, Storage } from '@rdma/core';
-import { Pipeline, createCoordinatorAgent } from '@rdma/coordinator';
-import { createResearchAgent } from '@rdma/research';
-import { createDesignerAgent } from '@rdma/designer';
-import { createPmAgent } from '@rdma/pm';
-import { createDevAgent } from '@rdma/dev';
-import { createQaAgent } from '@rdma/qa';
-import { createBossAgent } from '@rdma/boss';
 import { run } from './run.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-  const cmd = args[0];
-
-  if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
-    printHelp();
-    return;
-  }
-
-  switch (cmd) {
-    case 'deliver':
-      await run('deliver', args.slice(1));
-      return;
-    case 'list':
-    case 'ls':
-      await run('list', args.slice(1));
-      return;
-    case 'show':
-      await run('show', args.slice(1));
-      return;
-    case 'status':
-      await run('status', args.slice(1));
-      return;
-    case 'reset':
-      await run('reset', args.slice(1));
-      return;
-    case 'demo':
-      await run('demo', args.slice(1));
-      return;
-    case 'serve':
-      await run('serve', args.slice(1));
-      return;
-    default:
-      console.error(`Unknown command: ${cmd}`);
-      console.error('Run `rdma help` for usage.');
-      process.exit(1);
-  }
+export interface CliIo {
+  stdout: NodeJS.WritableStream;
+  stderr: NodeJS.WritableStream;
+  exit: (code: number) => void;
 }
 
-void __dirname;
+const defaultIo: CliIo = {
+  stdout: process.stdout,
+  stderr: process.stderr,
+  exit: (code) => process.exit(code),
+};
 
-function printHelp(): void {
-  console.log(`rdma — requirement-delivery-multi-agent CLI
+export function printHelp(out: NodeJS.WritableStream = defaultIo.stdout): void {
+  out.write(`rdma — requirement-delivery-multi-agent CLI
 
 Usage:
   rdma deliver <title> --requirement "<text>" [--url "<src>"] [--priority P1] [--scope small]
@@ -96,6 +61,8 @@ Usage:
         GET  /health              liveness probe
         GET  /proposals           list summaries
         GET  /proposals/:id       one proposal + handoff chain
+        GET  /inspect/:id         JSON inspect view
+        GET  /events              JSON audit event stream
         POST /deliver {title,requirement[,sourceUrl]}
                                  run a new proposal (async by default;
                                  append ?wait=1 to block until delivered)
@@ -104,6 +71,12 @@ Usage:
                                  dashboard or any @rdma/realtime client)
       Default storage is json. Use --storage sqlite to switch the
       daemon's backend at boot.
+
+  rdma inspect <proposal-id>
+      Show the handoff chain, artifacts, and audit timeline of a proposal.
+
+  rdma events [--proposal <id>] [--limit N] [--since-seq M]
+      Stream audit-derived events; omit --proposal to list across all proposals.
 
   rdma help
       This help.
@@ -117,11 +90,64 @@ Examples:
 `);
 }
 
-main().catch((err: unknown) => {
-  const message = err instanceof Error ? err.message : String(err);
-  console.error(`rdma: ${message}`);
-  if (err instanceof Error && err.stack) {
-    console.error(err.stack);
+export async function main(
+  args: string[],
+  io: CliIo = defaultIo,
+  runFn: (cmd: string, argv: string[]) => Promise<void> = run,
+): Promise<number> {
+  const cmd = args[0];
+
+  if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
+    printHelp(io.stdout);
+    return 0;
   }
-  process.exit(1);
-});
+
+  switch (cmd) {
+    case 'deliver':
+    case 'list':
+    case 'ls':
+    case 'show':
+    case 'status':
+    case 'reset':
+    case 'demo':
+    case 'serve':
+    case 'inspect':
+    case 'events':
+      await runFn(cmd, args.slice(1));
+      return 0;
+    default: {
+      io.stderr.write(`Unknown command: ${cmd}\n`);
+      io.stderr.write('Run `rdma help` for usage.\n');
+      io.exit(1);
+      return 1;
+    }
+  }
+}
+
+void __dirname;
+
+const invokedDirectly = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    return path.resolve(process.argv[1]) === __filename;
+  } catch {
+    return false;
+  }
+})();
+
+if (invokedDirectly) {
+  main(process.argv.slice(2))
+    .then((code) => {
+      if (code !== 0) {
+        process.exit(code);
+      }
+    })
+    .catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`rdma: ${message}\n`);
+      if (err instanceof Error && err.stack) {
+        process.stderr.write(`${err.stack}\n`);
+      }
+      process.exit(1);
+    });
+}

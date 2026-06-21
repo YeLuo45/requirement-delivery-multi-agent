@@ -10,13 +10,13 @@
  *   4. WS client sees proposal.created + stage.transitioned events.
  */
 
-import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { startServe, type ServeHandle } from '../src/serve.js';
+import { after, describe, it } from 'node:test';
 import { RealtimeClient } from '@rdma/realtime';
+import { type ServeHandle, startServe } from '../src/serve.js';
 
 const handles: ServeHandle[] = [];
 const dirs: string[] = [];
@@ -78,8 +78,8 @@ describe('rdma serve', () => {
       wait: true,
     });
     assert.equal(status, 200);
-    assert.equal(json['status'], 'delivered');
-    assert.ok(typeof json['id'] === 'string');
+    assert.equal(json.status, 'delivered');
+    assert.ok(typeof json.id === 'string');
   });
 
   it('POST /deliver (async) returns 202 and the proposal eventually shows up', async () => {
@@ -89,7 +89,7 @@ describe('rdma serve', () => {
       requirement: 'A proposal submitted in fire-and-forget mode.',
     });
     assert.equal(status, 202);
-    const id = json['id'] as string;
+    const id = json.id as string;
     assert.ok(id);
 
     // Wait for the pipeline to finish.
@@ -143,7 +143,10 @@ describe('rdma serve', () => {
     client.close();
 
     assert.ok(events.includes('proposal.created'), `missing proposal.created: ${events.join(',')}`);
-    assert.ok(events.includes('stage.transitioned'), `missing stage.transitioned: ${events.join(',')}`);
+    assert.ok(
+      events.includes('stage.transitioned'),
+      `missing stage.transitioned: ${events.join(',')}`,
+    );
     assert.ok(events.includes('audit.appended'), `missing audit.appended: ${events.join(',')}`);
   });
 
@@ -151,5 +154,103 @@ describe('rdma serve', () => {
     const h = await boot();
     const res = await fetch(`http://127.0.0.1:${h.port}/proposals/P-does-not-exist`);
     assert.equal(res.status, 404);
+  });
+});
+
+describe('rdma serve inspect + events (E5)', () => {
+  after(async () => {
+    for (const h of handles) await h.shutdown();
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+
+  it('GET /inspect/:id returns proposal + handoffChain + auditTimeline', async () => {
+    const h = await boot();
+    const { json: created } = await postDeliver(h.port, {
+      title: 'Inspect me',
+      requirement: 'A proposal that the inspect endpoint renders as JSON.',
+      wait: true,
+    });
+    const id = created.id as string;
+    const res = await fetch(`http://127.0.0.1:${h.port}/inspect/${id}`);
+    assert.equal(res.status, 200);
+    const data = (await res.json()) as {
+      proposal: { id: string; status: string; artifacts: unknown[] };
+      handoffChain: string[];
+      auditTimeline: Array<{ kind: string; parseable: boolean }>;
+    };
+    assert.equal(data.proposal.id, id);
+    assert.equal(data.proposal.status, 'delivered');
+    assert.ok(data.proposal.artifacts.length > 0);
+    assert.ok(data.handoffChain.length > 0);
+    assert.ok(data.auditTimeline.length > 0);
+    assert.ok(data.auditTimeline.every((e) => e.parseable));
+  });
+
+  it('GET /inspect/:id returns 404 for unknown proposal', async () => {
+    const h = await boot();
+    const res = await fetch(`http://127.0.0.1:${h.port}/inspect/P-unknown`);
+    assert.equal(res.status, 404);
+  });
+
+  it('GET /events?proposal=<id> returns the audit-derived event stream', async () => {
+    const h = await boot();
+    const { json: created } = await postDeliver(h.port, {
+      title: 'Events me',
+      requirement: 'A proposal whose events we observe via the events endpoint.',
+      wait: true,
+    });
+    const id = created.id as string;
+    const res = await fetch(`http://127.0.0.1:${h.port}/events?proposal=${id}&limit=200`);
+    assert.equal(res.status, 200);
+    const data = (await res.json()) as {
+      count: number;
+      events: Array<{ proposalId: string; kind: string; parseable: boolean }>;
+      proposalFilter: string | null;
+    };
+    assert.ok(data.count > 0);
+    assert.equal(data.proposalFilter, id);
+    assert.ok(data.events.every((e) => e.proposalId === id));
+    assert.ok(data.events.some((e) => e.kind === 'agent.handle.start'));
+    assert.ok(data.events.some((e) => e.kind === 'agent.handle.end'));
+  });
+
+  it('GET /events without proposal filter returns events across all proposals', async () => {
+    const h = await boot();
+    await postDeliver(h.port, {
+      title: 'All events A',
+      requirement: 'first.',
+      wait: true,
+    });
+    await postDeliver(h.port, {
+      title: 'All events B',
+      requirement: 'second.',
+      wait: true,
+    });
+    const res = await fetch(`http://127.0.0.1:${h.port}/events?limit=200`);
+    assert.equal(res.status, 200);
+    const data = (await res.json()) as {
+      count: number;
+      proposalFilter: string | null;
+    };
+    assert.ok(data.count > 0);
+    assert.equal(data.proposalFilter, null);
+  });
+
+  it('GET /events?proposal=<unknown> returns 404', async () => {
+    const h = await boot();
+    const res = await fetch(`http://127.0.0.1:${h.port}/events?proposal=P-nope`);
+    assert.equal(res.status, 404);
+  });
+
+  it('GET /events?limit=0 returns 400', async () => {
+    const h = await boot();
+    const res = await fetch(`http://127.0.0.1:${h.port}/events?limit=0`);
+    assert.equal(res.status, 400);
+  });
+
+  it('GET /events?since-seq=-1 returns 400', async () => {
+    const h = await boot();
+    const res = await fetch(`http://127.0.0.1:${h.port}/events?since-seq=-1`);
+    assert.equal(res.status, 400);
   });
 });

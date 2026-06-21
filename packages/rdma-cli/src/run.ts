@@ -8,24 +8,27 @@
 
 import { promises as fs, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { createBossAgent } from '@rdma/boss';
+import { Pipeline, createCoordinatorAgent } from '@rdma/coordinator';
 import {
   AgentRegistry,
   AuditLog,
-  Storage,
-  type Stage,
   type Proposal,
+  type Stage,
+  Storage,
   type StorageDriver,
 } from '@rdma/core';
-import { Pipeline, createCoordinatorAgent } from '@rdma/coordinator';
-import { createResearchAgent } from '@rdma/research';
 import { createDesignerAgent } from '@rdma/designer';
-import { createPmAgent } from '@rdma/pm';
 import { createDevAgent } from '@rdma/dev';
-import { createQaAgent } from '@rdma/qa';
-import { createBossAgent } from '@rdma/boss';
 import { EventBus } from '@rdma/persistence';
+import { createPmAgent } from '@rdma/pm';
+import { createQaAgent } from '@rdma/qa';
+import { createResearchAgent } from '@rdma/research';
 
 import { cmdServe, startServe } from './serve.js';
+export { cmdInspect, cmdEvents, buildInspectData, buildEventsData } from './inspect.js';
+export { cmdDiff, diffInspectData, lineDiff, unifiedDiff, buildArtifactPatch } from './diff.js';
+export { cmdReplay, replayProposal } from './replay.js';
 
 function findMonorepoRoot(startDir: string): string | null {
   // Walk up looking for a package.json that declares "workspaces".
@@ -36,11 +39,7 @@ function findMonorepoRoot(startDir: string): string | null {
     try {
       const content = readFileSync(pkgPath, 'utf8');
       const parsed: unknown = JSON.parse(content);
-      if (
-        typeof parsed === 'object' &&
-        parsed !== null &&
-        'workspaces' in parsed
-      ) {
+      if (typeof parsed === 'object' && parsed !== null && 'workspaces' in parsed) {
         return dir;
       }
     } catch {
@@ -56,14 +55,14 @@ function findMonorepoRoot(startDir: string): string | null {
 const MONOREPO_ROOT = findMonorepoRoot(process.cwd());
 
 export const STORAGE_ROOT = (() => {
-  const envOverride = process.env['RDMA_STORAGE_ROOT'];
+  const envOverride = process.env.RDMA_STORAGE_ROOT;
   if (envOverride) return path.resolve(envOverride);
   if (MONOREPO_ROOT) return path.join(MONOREPO_ROOT, '.rdma', 'data');
   return path.join(process.cwd(), '.rdma', 'data');
 })();
 
 export const SHIPPED_ROOT = (() => {
-  const envOverride = process.env['RDMA_SHIPPED_ROOT'];
+  const envOverride = process.env.RDMA_SHIPPED_ROOT;
   if (envOverride) return path.resolve(envOverride);
   if (MONOREPO_ROOT) return path.join(MONOREPO_ROOT, '.rdma', 'shipped');
   return path.join(process.cwd(), '.rdma', 'shipped');
@@ -112,10 +111,7 @@ export async function buildDeps(
   storageRoot: string = STORAGE_ROOT,
   opts: { useLlm?: boolean; storage?: 'json' | 'sqlite' } = {},
 ): Promise<BuildDeps> {
-  const storage = await createStorage(
-    storageRoot,
-    opts.storage ?? 'json',
-  );
+  const storage = await createStorage(storageRoot, opts.storage ?? 'json');
   const audit = new AuditLog(storage);
   const bus = new EventBus();
   const registry = new AgentRegistry();
@@ -129,28 +125,27 @@ export async function buildDeps(
     // Lazy import to avoid loading the LLM providers when not needed.
     const { createAnthropicProvider } = await import('@rdma/llm/anthropic');
     const { createOpenAiProvider } = await import('@rdma/llm/openai');
-    const model =
-      process.env['ANTHROPIC_API_KEY']
-        ? createAnthropicProvider({ apiKey: process.env['ANTHROPIC_API_KEY'] })
-        : process.env['OPENAI_API_KEY']
-          ? createOpenAiProvider({ apiKey: process.env['OPENAI_API_KEY'] })
-          : null;
+    const model = process.env.ANTHROPIC_API_KEY
+      ? createAnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY })
+      : process.env.OPENAI_API_KEY
+        ? createOpenAiProvider({ apiKey: process.env.OPENAI_API_KEY })
+        : null;
     if (model) {
       registry.register(createPmAgent({ model }));
       registry.register(createDevAgent({ model }));
       registry.register(createQaAgent({ model }));
       console.error(`[rdma] using LLM provider: ${model.name} (${model.defaultModel})`);
     } else {
-      console.error('[rdma] --use-llm set but no ANTHROPIC_API_KEY / OPENAI_API_KEY; falling back to mock agents');
+      console.error(
+        '[rdma] --use-llm set but no ANTHROPIC_API_KEY / OPENAI_API_KEY; falling back to mock agents',
+      );
       registry.register(createQaAgent());
     }
   } else {
     registry.register(createQaAgent());
   }
 
-  registry.register(
-    createBossAgent({ shippedRoot: SHIPPED_ROOT }),
-  );
+  registry.register(createBossAgent({ shippedRoot: SHIPPED_ROOT }));
   const pipeline = new Pipeline({ registry, storage, audit, bus });
   return { registry, storage, audit, pipeline, bus };
 }
@@ -164,7 +159,8 @@ export function parseArgs(argv: string[]): ParsedFlags {
   const positional: string[] = [];
   const flags: Record<string, string | boolean> = {};
   for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
+    const arg = argv[i];
+    if (arg === undefined) continue;
     if (arg.startsWith('--')) {
       const eq = arg.indexOf('=');
       if (eq !== -1) {
@@ -192,7 +188,8 @@ export function parseArgs(argv: string[]): ParsedFlags {
  *   3. The default ("json").
  */
 function resolveStorageBackend(flags: Record<string, string | boolean>): 'json' | 'sqlite' {
-  const raw = (typeof flags['storage'] === 'string' ? flags['storage'] : process.env['RDMA_STORAGE']) ?? 'json';
+  const raw =
+    (typeof flags.storage === 'string' ? flags.storage : process.env.RDMA_STORAGE) ?? 'json';
   if (raw === 'json' || raw === 'sqlite') return raw;
   console.error(`[rdma] unknown --storage "${raw}"; expected json|sqlite (using json)`);
   return 'json';
@@ -201,22 +198,24 @@ function resolveStorageBackend(flags: Record<string, string | boolean>): 'json' 
 export async function cmdDeliver(argv: string[]): Promise<void> {
   const { positional, flags } = parseArgs(argv);
   const title = positional[0];
-  const requirement = typeof flags['requirement'] === 'string' ? flags['requirement'] : undefined;
-  const url = typeof flags['url'] === 'string' ? flags['url'] : undefined;
-  const priority = typeof flags['priority'] === 'string' ? flags['priority'] : undefined;
-  const scope = typeof flags['scope'] === 'string' ? flags['scope'] : undefined;
+  const requirement = typeof flags.requirement === 'string' ? flags.requirement : undefined;
+  const url = typeof flags.url === 'string' ? flags.url : undefined;
+  const priority = typeof flags.priority === 'string' ? flags.priority : undefined;
+  const scope = typeof flags.scope === 'string' ? flags.scope : undefined;
   const useLlm = flags['use-llm'] === true;
   const storage = resolveStorageBackend(flags);
 
   if (!title || !requirement) {
-    console.error('Usage: rdma deliver <title> --requirement "<text>" [--url <src>] [--use-llm] [--storage json|sqlite]');
+    console.error(
+      'Usage: rdma deliver <title> --requirement "<text>" [--url <src>] [--use-llm] [--storage json|sqlite]',
+    );
     process.exit(1);
   }
 
   const { pipeline } = await buildDeps(STORAGE_ROOT, { useLlm, storage });
   const tags: Record<string, string> = {};
-  if (priority) tags['priority'] = priority;
-  if (scope) tags['scope'] = scope;
+  if (priority) tags.priority = priority;
+  if (scope) tags.scope = scope;
 
   const created = await pipeline.createProposal({
     title,
@@ -241,7 +240,7 @@ export async function cmdDeliver(argv: string[]): Promise<void> {
 
 export async function cmdList(argv: string[]): Promise<void> {
   const { flags } = parseArgs(argv);
-  const status = typeof flags['status'] === 'string' ? (flags['status'] as Stage) : undefined;
+  const status = typeof flags.status === 'string' ? (flags.status as Stage) : undefined;
   const { storage, audit } = await buildDeps(STORAGE_ROOT);
   const proposals = await storage.listProposals();
   const filtered = status ? proposals.filter((p) => p.status === status) : proposals;
@@ -253,9 +252,7 @@ export async function cmdList(argv: string[]): Promise<void> {
   console.log();
   for (const p of filtered) {
     const chain = (await audit.handoffChain(p.id, p.projectId)).join(' → ');
-    console.log(
-      `${p.id}  ${p.status.padEnd(28)}  ${p.title.slice(0, 50).padEnd(50)}  ${chain}`,
-    );
+    console.log(`${p.id}  ${p.status.padEnd(28)}  ${p.title.slice(0, 50).padEnd(50)}  ${chain}`);
   }
 }
 
@@ -277,7 +274,7 @@ export async function cmdShow(argv: string[]): Promise<void> {
   console.log(`  updated:     ${proposal.updatedAt}`);
   console.log(`  source URL:  ${proposal.sourceUrl ?? '(none)'}`);
   console.log(`  raw:         ${proposal.rawRequirement}`);
-  console.log(`  tags:`);
+  console.log('  tags:');
   for (const [k, v] of Object.entries(proposal.tags)) {
     console.log(`    - ${k}: ${v}`);
   }
@@ -313,7 +310,7 @@ export async function cmdStatus(_argv: string[]): Promise<void> {
   }
   const meta = await storage.readMeta();
 
-  console.log(`RDMA system status`);
+  console.log('RDMA system status');
   console.log(`  storage:    ${STORAGE_ROOT}`);
   console.log(`  meta:       v${meta.version} (created ${meta.createdAt})`);
   console.log(`  proposals:  ${proposals.length}`);
@@ -321,7 +318,7 @@ export async function cmdStatus(_argv: string[]): Promise<void> {
   for (const a of registry.all()) {
     console.log(`    - ${a.id.padEnd(16)} scope=${a.scope.join(', ')}`);
   }
-  console.log(`  by stage:`);
+  console.log('  by stage:');
   const stageOrder: Stage[] = [
     'research_direction_pending',
     'research',
@@ -346,7 +343,7 @@ export async function cmdStatus(_argv: string[]): Promise<void> {
 
 export async function cmdReset(argv: string[]): Promise<void> {
   const { flags } = parseArgs(argv);
-  const confirmed = flags['yes'] === true;
+  const confirmed = flags.yes === true;
   if (!confirmed) {
     console.error('This will wipe all proposals and audit logs. Pass --yes to confirm.');
     process.exit(1);
@@ -365,7 +362,8 @@ export async function cmdDemo(_argv: string[]): Promise<void> {
     },
     {
       title: 'Markdown linter',
-      rawRequirement: 'Build a markdown linter that catches broken links and inconsistent heading levels.',
+      rawRequirement:
+        'Build a markdown linter that catches broken links and inconsistent heading levels.',
       tags: { priority: 'P3', scope: 'small' },
     },
     {
@@ -379,7 +377,9 @@ export async function cmdDemo(_argv: string[]): Promise<void> {
     const proposal = await pipeline.createProposal(sample);
     const final = await pipeline.runToCompletion(proposal);
     const chain = await audit.handoffChain(final.id, final.projectId);
-    console.log(`   ${final.id}  status=${final.status}  chain=${chain.join(' → ')}  artifacts=${final.artifacts.length}`);
+    console.log(
+      `   ${final.id}  status=${final.status}  chain=${chain.join(' → ')}  artifacts=${final.artifacts.length}`,
+    );
   }
 }
 
@@ -400,6 +400,14 @@ export async function run(command: string, argv: string[]): Promise<void> {
       return cmdDemo(argv);
     case 'serve':
       return cmdServe(argv);
+    case 'inspect':
+      return cmdInspect(argv);
+    case 'events':
+      return cmdEvents(argv);
+    case 'diff':
+      return cmdDiff(argv);
+    case 'replay':
+      return cmdReplay(argv);
     default:
       console.error(`Unknown command: ${command}`);
       process.exit(1);
