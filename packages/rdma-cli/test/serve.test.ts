@@ -254,3 +254,73 @@ describe('rdma serve inspect + events (E5)', () => {
     assert.equal(res.status, 400);
   });
 });
+
+describe('rdma serve observability endpoints (F5)', () => {
+  const handles: ServeHandle[] = [];
+  const dirs: string[] = [];
+  async function bootF5(): Promise<ServeHandle> {
+    const storageRoot = mkdtempSync(path.join(tmpdir(), 'rdma-serve-obs-'));
+    const shippedRoot = mkdtempSync(path.join(tmpdir(), 'rdma-serve-obs-shipped-'));
+    dirs.push(storageRoot, shippedRoot);
+    const h = await startServe({
+      port: 0,
+      host: '127.0.0.1',
+      storage: 'json',
+      useLlm: false,
+      storageRoot,
+      shippedRoot,
+    });
+    handles.push(h);
+    return h;
+  }
+  after(async () => {
+    for (const h of handles) await h.shutdown();
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  });
+
+  it('GET /metrics returns the Prometheus exposition', async () => {
+    const h = await bootF5();
+    const res = await fetch(`http://127.0.0.1:${h.port}/metrics`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type') ?? '', /text\/plain/);
+    const body = await res.text();
+    // Walk the pipeline once so the counters + timings have data.
+    await postDeliver(h.port, {
+      title: 'metrics over HTTP',
+      requirement: 'Ensure metrics have at least one sample before we read.',
+      wait: true,
+    });
+    const after = await fetch(`http://127.0.0.1:${h.port}/metrics`);
+    const afterBody = await after.text();
+    assert.match(afterBody, /# HELP agent_handle_start/);
+    assert.match(afterBody, /# TYPE agent_handle_start counter/);
+    assert.match(afterBody, /# TYPE agent_handle_seconds summary/);
+    // The first call (no pipeline yet) might print the empty-snapshot
+    // sentinel — both forms are valid HTTP output, so we just check
+    // status + content-type and assert structure on the post-walk body.
+    assert.match(body, /(no metrics recorded yet|# HELP)/);
+  });
+
+  it('GET /traces returns the last N spans as JSON', async () => {
+    const h = await bootF5();
+    await postDeliver(h.port, {
+      title: 'trace over HTTP',
+      requirement: 'Need at least one span on the exporter.',
+      wait: true,
+    });
+    const res = await fetch(`http://127.0.0.1:${h.port}/traces?limit=10`);
+    assert.equal(res.status, 200);
+    const data = (await res.json()) as {
+      count: number;
+      spans: Array<{ name: string; status: string; attributes: Record<string, unknown> }>;
+    };
+    assert.ok(data.count > 0, 'expected at least one span after a pipeline walk');
+    assert.ok(data.spans.some((s) => s.name === 'agent.handle'));
+  });
+
+  it('GET /traces?limit=0 returns 400', async () => {
+    const h = await bootF5();
+    const res = await fetch(`http://127.0.0.1:${h.port}/traces?limit=0`);
+    assert.equal(res.status, 400);
+  });
+});

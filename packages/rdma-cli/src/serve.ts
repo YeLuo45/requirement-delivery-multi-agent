@@ -31,9 +31,18 @@ import { type IncomingMessage, type ServerResponse, createServer } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import type { Proposal } from '@rdma/core';
 import { ProposalNotFoundError } from '@rdma/core';
+import {
+  InMemoryExporter,
+  InMemoryMetrics,
+  type MetricsRecorder,
+  type Span,
+  createTracer,
+  setGlobalTracer,
+} from '@rdma/observability';
 import { DurableJournal, isResumeableStage } from '@rdma/persistence';
 import { RealtimeServer } from '@rdma/realtime';
 import { buildEventsData, buildInspectData } from './inspect.js';
+import { renderMetricsText } from './metrics.js';
 import { SHIPPED_ROOT, STORAGE_ROOT, buildDeps } from './run.js';
 
 interface ParsedFlags {
@@ -135,6 +144,13 @@ export interface ServeOptions {
   useLlm: boolean;
   storageRoot?: string;
   shippedRoot?: string;
+  /**
+   * Internal hook for tests: inject a pre-built metrics recorder /
+   * span exporter. Production callers leave this undefined and
+   * startServe() allocates fresh InMemory implementations.
+   */
+  metrics?: MetricsRecorder;
+  exporter?: InMemoryExporter;
 }
 
 export interface ServeHandle {
@@ -145,17 +161,34 @@ export interface ServeHandle {
   shutdown: () => Promise<void>;
   /** Number of proposals resumed from a previous run's journal. */
   resumed: number;
+  metrics: MetricsRecorder;
+  exporter: InMemoryExporter;
 }
 
 export async function startServe(opts: ServeOptions): Promise<ServeHandle> {
   if (opts.storageRoot) process.env.RDMA_STORAGE_ROOT = opts.storageRoot;
   if (opts.shippedRoot) process.env.RDMA_SHIPPED_ROOT = opts.shippedRoot;
+
+  // F5: spin up an in-memory tracer + metrics recorder and wire them
+  // into the pipeline. We also push the tracer into the global
+  // registry so any new Pipeline() built after this point picks up
+  // the same exporter (handy for tests that want to inspect traces).
+  const exporter = opts.exporter ?? new InMemoryExporter();
+  const tracer = createTracer(exporter);
+  setGlobalTracer(tracer);
+  const metrics = opts.metrics ?? new InMemoryMetrics();
+
   const {
     pipeline,
     storage: store,
     audit,
     bus,
   } = await buildDeps(opts.storageRoot, { useLlm: opts.useLlm, storage: opts.storage });
+
+  // Swap in the metrics recorder onto the live pipeline. We keep the
+  // Pipeline's default noop recorder so /metrics reads from the same
+  // recorder the pipeline writes into.
+  pipeline.setMetrics(metrics);
 
   const httpServer = createServer((req, res) => {
     void handleHttp(req, res, {
@@ -164,6 +197,8 @@ export async function startServe(opts: ServeOptions): Promise<ServeHandle> {
       audit,
       bus,
       storageRoot: opts.storageRoot,
+      metrics,
+      exporter,
     });
   });
   const realtime = new RealtimeServer({ bus, httpServer, path: '/ws' });
@@ -243,6 +278,8 @@ export async function startServe(opts: ServeOptions): Promise<ServeHandle> {
     realtime,
     shutdown,
     resumed: resumeSummary.resumed,
+    metrics,
+    exporter,
   };
 }
 
@@ -278,6 +315,8 @@ interface HttpCtx {
   audit: import('@rdma/core').AuditLog;
   bus: import('@rdma/persistence').EventBus;
   storageRoot?: string;
+  metrics: MetricsRecorder;
+  exporter: InMemoryExporter;
 }
 
 /**
@@ -451,6 +490,46 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse, ctx: HttpCt
     } catch (err) {
       sendJson(res, 500, { error: String(err) });
     }
+    return;
+  }
+
+  // /metrics — Prometheus exposition of the live metrics recorder.
+  // We render directly from the in-memory recorder so the daemon
+  // can serve Prometheus scrapers without any extra dependency.
+  if (path === '/metrics' && method === 'GET') {
+    const text = renderMetricsText(ctx.metrics.snapshot());
+    res.writeHead(200, {
+      'content-type': 'text/plain; version=0.0.4; charset=utf-8',
+    });
+    res.end(text);
+    return;
+  }
+
+  // /traces?limit=N — JSON view of the most recent N spans the
+  // in-memory exporter has captured. Intended for ad-hoc debug
+  // dashboards; production callers should use the OTLP exporter
+  // from the OtelAdapter instead.
+  if (path === '/traces' && method === 'GET') {
+    const limitRaw = url.searchParams.get('limit');
+    const limit = limitRaw !== null ? Number(limitRaw) : 50;
+    if (Number.isNaN(limit) || limit <= 0) {
+      sendJson(res, 400, { error: '--limit must be a positive integer' });
+      return;
+    }
+    const all = ctx.exporter.spans.slice(-limit);
+    sendJson(res, 200, {
+      count: all.length,
+      spans: all.map((s: Span & Record<string, unknown>) => ({
+        traceId: s.traceId,
+        spanId: s.spanId,
+        parentSpanId: s.parentSpanId,
+        name: s.name,
+        status: s.status,
+        attributes: s.attributes,
+        startMs: s.startMs,
+        endMs: s.endMs,
+      })),
+    });
     return;
   }
 
