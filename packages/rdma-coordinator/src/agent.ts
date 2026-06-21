@@ -32,6 +32,13 @@ import {
   scopeOf,
   transition,
 } from '@rdma/core';
+import {
+  type MetricsRecorder,
+  NoopMetrics,
+  NoopTracer,
+  type Tracer,
+  getGlobalTracer,
+} from '@rdma/observability';
 
 // Re-export scopeOf so consumers can find it via the package
 export { scopeOf as SCOPE_OF } from '@rdma/core';
@@ -125,6 +132,8 @@ export class Pipeline {
   readonly audit: AuditLog;
   private readonly counter: SequenceCounter;
   private readonly bus: EventBus | null;
+  private readonly tracer: Tracer;
+  private _metrics: MetricsRecorder;
 
   constructor(deps: {
     registry: import('@rdma/core').AgentRegistry;
@@ -132,12 +141,39 @@ export class Pipeline {
     audit: AuditLog;
     counter?: SequenceCounter;
     bus?: EventBus;
+    tracer?: Tracer;
+    metrics?: MetricsRecorder;
   }) {
     this.registry = deps.registry;
     this.storage = deps.storage;
     this.audit = deps.audit;
     this.counter = deps.counter ?? new SequenceCounter();
     this.bus = deps.bus ?? null;
+    // Default to the global tracer so callers can swap it with
+    // `setGlobalTracer()` and have every new pipeline pick it up
+    // without constructor noise. Fall back to a fresh NoopTracer if
+    // the global one was never set.
+    this.tracer = deps.tracer ?? getGlobalTracer() ?? new NoopTracer();
+    this._metrics = deps.metrics ?? new NoopMetrics();
+  }
+
+  /**
+   * The metrics recorder the pipeline writes into. Read-only outside
+   * the package; exposed so the HTTP daemon (`rdma serve`) can
+   * serve `/metrics` from the same recorder the pipeline uses.
+   */
+  get metrics(): MetricsRecorder {
+    return this._metrics;
+  }
+
+  /**
+   * Replace the metrics recorder after construction. Used by the
+   * `rdma serve` bootstrap so a fresh in-memory recorder is wired
+   * into the live pipeline (the constructor default would otherwise
+   * win and the daemon would never see samples).
+   */
+  setMetrics(recorder: MetricsRecorder): void {
+    this._metrics = recorder;
   }
 
   /** Emit a realtime event (no-op if no bus was supplied). */
@@ -205,7 +241,55 @@ export class Pipeline {
     });
     this.emit('audit.appended', proposal, { stage: proposal.status, kind: 'agent.handle.start' });
 
-    const result = await agent.handle(ctx);
+    // Observability hooks (F2): wrap the agent.handle() call in a span
+    // named after the agent. Span attributes carry proposalId /
+    // projectId / agentId / stage so downstream filters can slice
+    // by agent or proposal. We also bump a counter and a timing
+    // sample on the metrics recorder — these are intentionally
+    // per-agent so the CLI can render prometheus-style metrics.
+    const span = this.tracer.startSpan('agent.handle', {
+      attributes: {
+        proposalId: proposal.id,
+        projectId: proposal.projectId,
+        agentId: agent.id,
+        stage: proposal.status,
+      },
+    });
+    const handleStartedAt = Date.now();
+    this.metrics.increment('agent.handle.start', 1, {
+      agentId: agent.id,
+      stage: proposal.status,
+    });
+    let result: AgentResult;
+    try {
+      result = await agent.handle(ctx);
+    } catch (err) {
+      span.recordError(err);
+      this.metrics.increment('agent.handle.error', 1, { agentId: agent.id });
+      span.end();
+      this.metrics.timing('agent.handle', Date.now() - handleStartedAt, {
+        agentId: agent.id,
+        stage: proposal.status,
+        outcome: 'error',
+      });
+      throw err;
+    }
+    span.setAttribute('resultKind', result.kind);
+    if (result.kind === 'handoff') {
+      span.setAttribute('next', result.to);
+    } else if (result.kind === 'transition') {
+      span.setAttribute('next', result.nextStage);
+    }
+    span.end();
+    this.metrics.timing('agent.handle', Date.now() - handleStartedAt, {
+      agentId: agent.id,
+      stage: proposal.status,
+      outcome: result.kind,
+    });
+    this.metrics.increment('agent.handle.end', 1, {
+      agentId: agent.id,
+      resultKind: result.kind,
+    });
 
     await this.audit.record({
       proposalId: proposal.id,
