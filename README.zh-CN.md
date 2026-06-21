@@ -476,6 +476,17 @@ requirement-delivery-multi-agent/
 - 状态机改动必须更新 `state-machine.test.ts`
 - 新 Agent 必须更新 `docs/agents.md` 和 OWNERSHIP 表
 
+## Delivery Control Plane
+
+`@rdma/delivery-control` 提供安全自治交付所需的控制面工具：
+
+- `buildDeliveryPlan()` + `executeSandboxPatch()`：规划并写入隔离 sandbox，输出可审查 patch bundle。
+- `evaluateToolRequest()` + `publishPolicyAuditEvent()`：把工具策略 allow/deny 决策转成审计事件。
+- `createBudgetLedger()` + `recordBudgetMetrics()`：按 proposal 记录成本，并输出 cents 级指标。
+- `approveCollaborator()` + `formatCollaborationPanel()`：把 readonly/review/edit 协作权限渲染成 CLI/TUI/Web 可复用面板。
+
+这些 API 都是本地纯 TypeScript 逻辑，不执行 shell，不访问外网。
+
 ## License
 
 MIT — 见 [LICENSE](LICENSE)。

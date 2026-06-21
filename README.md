@@ -133,6 +133,17 @@ The brief is then handed to the coordinator, who registers a proposal and starts
 
 **v0.1.0** — initial scaffolding. End-to-end flow works with deterministic mock agents. The `market_research` agent uses a stubbed web search that returns canned data; swap with a real provider behind the same interface.
 
+## Delivery control plane
+
+`@rdma/delivery-control` provides reusable control-plane helpers for safe autonomous delivery:
+
+- `buildDeliveryPlan()` and `executeSandboxPatch()` plan and apply file writes inside an isolated sandbox root.
+- `evaluateToolRequest()` and `publishPolicyAuditEvent()` turn tool-policy decisions into auditable allow/deny events.
+- `createBudgetLedger()` and `recordBudgetMetrics()` track proposal spend as cents-based counters.
+- `approveCollaborator()` and `formatCollaborationPanel()` expose readonly/review/edit access decisions for CLI/TUI/Web surfaces.
+
+These helpers are pure local TypeScript APIs; they do not execute shell commands or call external networks.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

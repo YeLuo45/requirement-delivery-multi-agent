@@ -1,3 +1,6 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
 export type DeliveryScope = 'small' | 'medium' | 'large';
 export type DeliveryPriority = 'P0' | 'P1' | 'P2' | 'P3';
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
@@ -143,6 +146,48 @@ export interface ControlPlaneSummary {
   readonly directions: ReadonlyArray<string>;
   readonly readyForDevExecution: boolean;
   readonly report: string;
+}
+
+export interface SandboxPatchFile {
+  readonly path: string;
+  readonly content: string;
+}
+
+export interface SandboxPatchRequest {
+  readonly files: ReadonlyArray<SandboxPatchFile>;
+  readonly testCommand: string;
+}
+
+export interface SandboxPatchResult {
+  readonly allowed: boolean;
+  readonly reason: string;
+  readonly writtenFiles: ReadonlyArray<string>;
+  readonly commands: ReadonlyArray<string>;
+  readonly patchBundle: string;
+}
+
+export interface PolicyAuditInput {
+  readonly proposalId: string;
+  readonly actor: string;
+  readonly request: ToolRequest;
+  readonly decision: ToolDecision;
+}
+
+export interface PolicyAuditEvent {
+  readonly kind: 'tool.policy.allowed' | 'tool.policy.denied';
+  readonly payload: {
+    readonly proposalId: string;
+    readonly actor: string;
+    readonly tool: string;
+    readonly risk: RiskLevel;
+    readonly allowed: boolean;
+    readonly reason: string;
+  };
+}
+
+export interface ControlPlaneMetrics {
+  increment(name: string, value?: number): void;
+  snapshot(): { counters: Record<string, number> };
 }
 
 const RISK_ORDER: Record<RiskLevel, number> = {
@@ -343,6 +388,113 @@ export function summarizeControlPlane(input: ControlPlaneSummaryInput): ControlP
       `budget=${input.budget.remainingUsd.toFixed(2)} USD remaining`,
     ].join('; '),
   };
+}
+
+export function executeSandboxPatch(
+  plan: DeliveryPlan,
+  request: SandboxPatchRequest,
+): SandboxPatchResult {
+  const sandboxRoot = plan.sandbox.path;
+  const writtenFiles: string[] = [];
+  const patchLines: string[] = [];
+
+  for (const file of request.files) {
+    if (path.isAbsolute(file.path) || file.path.split(/[\\/]+/).includes('..')) {
+      return {
+        allowed: false,
+        reason: `${file.path} is outside sandbox`,
+        writtenFiles: [],
+        commands: [],
+        patchBundle: '',
+      };
+    }
+
+    const target = path.join(sandboxRoot, file.path);
+    if (!isInsideRoot(target, sandboxRoot)) {
+      return {
+        allowed: false,
+        reason: `${file.path} is outside sandbox`,
+        writtenFiles: [],
+        commands: [],
+        patchBundle: '',
+      };
+    }
+
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, file.content, 'utf8');
+    writtenFiles.push(target);
+    patchLines.push(
+      '--- /dev/null',
+      `+++ ${file.path}`,
+      ...file.content.split('\n').map((line) => `+${line}`),
+    );
+  }
+
+  return {
+    allowed: true,
+    reason: 'patch applied inside sandbox',
+    writtenFiles,
+    commands: [request.testCommand],
+    patchBundle: `${patchLines.join('\n')}\n`,
+  };
+}
+
+export function publishPolicyAuditEvent(
+  input: PolicyAuditInput,
+  publish: (event: PolicyAuditEvent) => void,
+): PolicyAuditEvent {
+  const event: PolicyAuditEvent = {
+    kind: input.decision.allowed ? 'tool.policy.allowed' : 'tool.policy.denied',
+    payload: {
+      proposalId: input.proposalId,
+      actor: input.actor,
+      tool: input.request.tool,
+      risk: input.request.risk,
+      allowed: input.decision.allowed,
+      reason: input.decision.reason,
+    },
+  };
+  publish(event);
+  return event;
+}
+
+export function createControlPlaneMetrics(): ControlPlaneMetrics {
+  const counters: Record<string, number> = {};
+  return {
+    increment(name: string, value = 1): void {
+      counters[name] = (counters[name] ?? 0) + value;
+    },
+    snapshot(): { counters: Record<string, number> } {
+      return { counters: { ...counters } };
+    },
+  };
+}
+
+export function recordBudgetMetrics(
+  snapshot: BudgetSnapshot,
+  metrics: ControlPlaneMetrics,
+): BudgetSnapshot {
+  metrics.increment('rdma.cost.records', snapshot.records.length);
+  metrics.increment('rdma.cost.spent_cents', Math.round(snapshot.spentUsd * 100));
+  metrics.increment('rdma.cost.remaining_cents', Math.round(snapshot.remainingUsd * 100));
+  return snapshot;
+}
+
+export function formatCollaborationPanel(decisions: ReadonlyArray<CollaborationDecision>): string {
+  const lines = ['Collaboration', 'role       access                         lease'];
+  for (const decision of decisions) {
+    const access = [
+      decision.permissions.canRead ? 'read' : '',
+      decision.permissions.canComment ? 'comment' : '',
+      decision.permissions.canModifyArtifacts ? 'modify' : '',
+    ]
+      .filter(Boolean)
+      .join(',');
+    lines.push(
+      `${decision.role.padEnd(10)} ${access.padEnd(30)} ${decision.lease?.expiresAt ?? '-'}`,
+    );
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 function permissionsForMode(
