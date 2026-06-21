@@ -6,7 +6,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](package.json)
-[![Tests: 33 passing](https://img.shields.io/badge/tests-33%20passing-brightgreen)](scripts/e2e-hello-world.test.ts)
+[![Tests: 222 passing](https://img.shields.io/badge/tests-222%20passing-brightgreen)](scripts/test-all.sh)
+[![Coverage: 100.00%](https://img.shields.io/badge/coverage-100.00%25-brightgreen)](scripts/check-coverage.mjs)
 [![Packages: 11](https://img.shields.io/badge/packages-11-blue)](packages)
 [![Status: v0.1.0](https://img.shields.io/badge/status-v0.1.0-orange)](CHANGELOG.md)
 
@@ -75,22 +76,27 @@ RDMA 是一个**接收互联网需求 → 自动交付完成**的多智能体系
 ```bash
 git clone https://github.com/YeLuo45/requirement-delivery-multi-agent.git
 cd requirement-delivery-multi-agent
-npm install --ignore-scripts
+npm install --include=dev --ignore-scripts
 ```
 
 ### 2. 跑端到端冒烟测试（无需 API key）
 
 ```bash
-npm run test:core    # 27 个 @rdma/core 单元测试
-npm run test:e2e     # 6 个端到端测试（happy path / UI 路由 / QA 返工 / artifact 健全性）
+npm test               # 全量测试：222 个测试，要求 100% 通过
+npm run coverage       # 源码覆盖率门禁：要求 >=95%
+npm run verify:readme  # README 命令真实验收
+npm run doctor         # Node + devDeps + bin 健全性检查
+npm run smoke:serve    # 端到端跑 rdma serve daemon（HTTP+WS+REST）
 ```
 
 预期：
 
 ```
-# tests 33
-# pass  33
+# tests 222
+# pass  222
 # fail  0
+Coverage gate passed: 100.00% >= 95.00%
+All README commands verified.
 ```
 
 ### 3. 手动交付一个需求
@@ -128,10 +134,22 @@ Delivered: P-20260619-001
 npm run cli -- list
 
 # 查看单个提案详情（含 artifact + 审计日志）
-npm run cli -- show P-20260619-001
+npm run cli -- show <proposal-id>
 
 # 系统总览
 npm run cli -- status
+
+# 检查单个提案（handoff + artifacts + audit timeline）
+npm run cli -- inspect <proposal-id>
+
+# 查看审计事件流
+npm run cli -- events --proposal <proposal-id> --limit 50
+
+# 对比两个 proposal 的 artifact + 阶段差异
+npm run cli -- diff <proposal-id-a> <proposal-id-b>
+
+# 重放单个 proposal 的 audit log 事件流（调试用）
+npm run cli -- replay <proposal-id>
 ```
 
 ### 5. 跑示例
@@ -147,6 +165,7 @@ npm run bootstrap
 ### 6. 启动 MCP Server（让外部 Agent 用 RDMA）
 
 ```bash
+# 长驻进程；停止用 Ctrl+C
 npm run dev:server
 ```
 
@@ -169,6 +188,7 @@ npm run dev:server
 ### 7. 启动 Web 监控面板（开发模式）
 
 ```bash
+# 长驻进程；停止用 Ctrl+C
 npm run dev:web   # http://localhost:5173
 ```
 

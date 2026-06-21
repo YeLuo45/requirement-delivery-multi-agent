@@ -1,0 +1,50 @@
+# PR-only "is the README honest" gate. We deliberately don't
+# re-run the full test matrix here — the matrix job in
+# `test.yml` does that. This workflow just answers the question
+# "did anyone change a README example without keeping it real?"
+#
+# Triggered on PR open/sync/reopen + manual dispatch. Skipped for
+# pushes to master because the push-side matrix job already
+# covers it.
+name: verify-readme
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-readme-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: README smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --include=dev --ignore-scripts
+
+      - name: Doctor (env + binaries)
+        run: npm run doctor
+
+      - name: README command smoke
+        # This is the README honesty gate. Every `bash` block in
+        # README.md and README.zh-CN.md is spawned for real; long-
+        # running daemons are matched on a readiness line and
+        # killed. Stale commands flip this to red.
+        run: npm run verify:readme

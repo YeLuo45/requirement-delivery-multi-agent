@@ -240,8 +240,12 @@ git push -u origin feature/rdma-A1-llm-provider
 | 10 | B6 | web 接入 WS + 实时 indicator | 74/74 | ~190 | cd0f243 |
 | 11 | B7 | perf bench + index 修 | 78/78 | ~225 | 0e2921b |
 | 12 | B8 | `rdma serve` daemon (HTTP + WS) | 84/84 | ~530 | 9c2b1fa |
+| 13 | E1 | EventBus sequence + replay buffer | 109/109 | ~420 | d517d3a |
+| 14 | E2 | EventEmittingStorage wrapper | 119/119 | ~240 | f17fce9 |
+| 15 | E3 | `Pipeline.resumeFromStage` | 119/119 | ~260 | 9508064 |
+| 16 | E4-E6 | inspect/events/diff/replay CLI + HTTP endpoints + durable journal + observability + README/CI gates | 278/278 | ~2500 | pending |
 
-> 实测当前完整 84/84 tests passing（27 core + 6 e2e + 2 e2e-llm + 7 pm + 7 dev + 8 qa + 8 research + 14 persistence + 7 realtime + 5 bench + 6 serve）。
+> 实测当前完整 278/278 tests passing；源码覆盖率 4734/4734（100.00%）。本轮额外门禁：`npm run check`、`npm run verify:readme`、`npm run doctor`、`npm run smoke:serve`、`npm run build --workspace=@rdma/web` 全部通过。
 
 ### B 方向性能数字
 

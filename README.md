@@ -63,18 +63,23 @@ Stages (full list, see `docs/state-machine.md`):
 
 ```bash
 # install
-npm install --ignore-scripts
+npm install --include=dev --ignore-scripts
 
 # run the end-to-end smoke test (no API keys needed)
 npm run e2e
 
-# or run a single requirement manually
-npm run cli -- deliver "Build me a CLI that converts JSON to CSV"
+# run the full suite and enforce source coverage >=95%
+npm test
+npm run coverage
 
-# start the monitoring dashboard
+# or run a single requirement manually
+npm run cli -- deliver "Build me a CLI that converts JSON to CSV" \
+  --requirement "Convert a JSON array of objects to CSV."
+
+# start the monitoring dashboard (long-running; stop with Ctrl+C)
 npm run dev:web
 
-# run the MCP server (exposes RDMA tools to external agents)
+# run the MCP server (long-running; exposes RDMA tools to external agents)
 npm run dev:server
 ```
 
