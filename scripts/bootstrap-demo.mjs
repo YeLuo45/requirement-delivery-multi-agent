@@ -10,14 +10,14 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { AgentRegistry, AuditLog, Storage } from '@rdma/core';
-import { Pipeline, createCoordinatorAgent } from '@rdma/coordinator';
-import { createResearchAgent } from '@rdma/research';
-import { createDesignerAgent } from '@rdma/designer';
-import { createPmAgent } from '@rdma/pm';
-import { createDevAgent } from '@rdma/dev';
-import { createQaAgent } from '@rdma/qa';
 import { createBossAgent } from '@rdma/boss';
+import { Pipeline, createCoordinatorAgent } from '@rdma/coordinator';
+import { AgentRegistry, AuditLog, Storage } from '@rdma/core';
+import { createDesignerAgent } from '@rdma/designer';
+import { createDevAgent } from '@rdma/dev';
+import { createPmAgent } from '@rdma/pm';
+import { createQaAgent } from '@rdma/qa';
+import { createResearchAgent } from '@rdma/research';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -49,7 +49,8 @@ async function main() {
     },
     {
       title: 'Markdown linter',
-      rawRequirement: 'Build a markdown linter that catches broken links and inconsistent heading levels.',
+      rawRequirement:
+        'Build a markdown linter that catches broken links and inconsistent heading levels.',
       tags: { priority: 'P3', scope: 'small' },
     },
     {
@@ -64,7 +65,9 @@ async function main() {
     const proposal = await pipeline.createProposal(sample);
     const final = await pipeline.runToCompletion(proposal);
     const chain = await audit.handoffChain(final.id, final.projectId);
-    console.log(`   ${final.id}  status=${final.status}  chain=${chain.join(' → ')}  artifacts=${final.artifacts.length}`);
+    console.log(
+      `   ${final.id}  status=${final.status}  chain=${chain.join(' → ')}  artifacts=${final.artifacts.length}`,
+    );
   }
 
   console.log('\nAll samples delivered. Inspect with:');

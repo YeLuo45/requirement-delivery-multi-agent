@@ -11,27 +11,21 @@
  *   4. Records a clean handoff chain in the audit log
  */
 
-import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { after, before, describe, it } from 'node:test';
 
-import {
-  AgentRegistry,
-  AuditLog,
-  Storage,
-  type ArtifactKind,
-  type Proposal,
-} from '@rdma/core';
+import { AgentRegistry, type ArtifactKind, AuditLog, type Proposal, Storage } from '@rdma/core';
 
-import { Pipeline, createCoordinatorAgent } from '@rdma/coordinator';
-import { createResearchAgent } from '@rdma/research';
-import { createDesignerAgent } from '@rdma/designer';
-import { createPmAgent } from '@rdma/pm';
-import { createDevAgent } from '@rdma/dev';
-import { createQaAgent } from '@rdma/qa';
 import { createBossAgent } from '@rdma/boss';
+import { Pipeline, createCoordinatorAgent } from '@rdma/coordinator';
+import { createDesignerAgent } from '@rdma/designer';
+import { createDevAgent } from '@rdma/dev';
+import { createPmAgent } from '@rdma/pm';
+import { createQaAgent } from '@rdma/qa';
+import { createResearchAgent } from '@rdma/research';
 
 function makeTmpRoot(): string {
   return path.join(tmpdir(), `rdma-e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -104,29 +98,22 @@ describe('e2e: JSON to CSV CLI', () => {
   it('reconstructs a clean handoff chain in the audit log', async () => {
     const proposals = await storage.listProposals();
     assert.equal(proposals.length, 1);
-    const p = proposals[0]!;
+    const p = proposals[0];
+    assert.ok(p, 'expected one proposal');
     const chain = await audit.handoffChain(p.id, p.projectId);
     // We expect: market_research, coordinator, pm, dev, qa, boss
     // (designer is skipped because the keyword scan decided this is non-UI work)
-    assert.deepEqual(chain, [
-      'market_research',
-      'coordinator',
-      'pm',
-      'dev',
-      'qa',
-      'boss',
-    ]);
+    assert.deepEqual(chain, ['market_research', 'coordinator', 'pm', 'dev', 'qa', 'boss']);
   });
 
   it('writes a deployment record to the shipped directory', async () => {
     const proposals = await storage.listProposals();
-    const p = proposals[0]!;
+    const p = proposals[0];
+    assert.ok(p, 'expected one proposal');
     const shippedDir = path.join(process.cwd(), '.rdma', 'shipped', p.projectId);
     const files = await fs.readdir(shippedDir);
     assert.ok(files.length > 0, 'no shipped files written');
-    const record = JSON.parse(
-      await fs.readFile(path.join(shippedDir, `${p.id}.json`), 'utf8'),
-    );
+    const record = JSON.parse(await fs.readFile(path.join(shippedDir, `${p.id}.json`), 'utf8'));
     assert.equal(record.proposalId, p.id);
     assert.equal(record.deployedFromStatus, 'accepted');
     await fs.rm(path.join(process.cwd(), '.rdma', 'shipped'), { recursive: true, force: true });
@@ -172,7 +159,7 @@ describe('e2e: QA rework loop', () => {
   let storage: Storage;
   let audit: AuditLog;
   let pipeline: Pipeline;
-  let forceFailures = 0;
+  const forceFailures = 0;
 
   before(async () => {
     root = makeTmpRoot();
@@ -222,12 +209,12 @@ describe('e2e: QA rework loop', () => {
       // Before QA's first call (i.e. when status is in_test_acceptance and
       // we haven't failed yet), swap in a failing QA agent.
       if (p.status === 'in_test_acceptance' && !failedOnce) {
-        const reg = pipeline['registry'] as AgentRegistry;
+        const reg = pipeline.registry as AgentRegistry;
         reg.replace(createQaAgent({ forceFailure: true }));
         failedOnce = true;
       } else if (p.status === 'test_failed') {
         // Re-test after dev's fix — register a passing QA.
-        const reg = pipeline['registry'] as AgentRegistry;
+        const reg = pipeline.registry as AgentRegistry;
         reg.replace(createQaAgent({ forceFailure: false }));
       }
 
@@ -239,8 +226,14 @@ describe('e2e: QA rework loop', () => {
     // We should have at least 2 test reports (one failure, one pass)
     const reports = p.artifacts.filter((a) => a.kind === 'test_report');
     assert.ok(reports.length >= 2, `expected >=2 test reports, got ${reports.length}`);
-    assert.ok(reports.some((r) => r.summary.includes('FAIL')), 'expected a FAIL report');
-    assert.ok(reports.some((r) => r.summary.includes('PASS')), 'expected a PASS report');
+    assert.ok(
+      reports.some((r) => r.summary.includes('FAIL')),
+      'expected a FAIL report',
+    );
+    assert.ok(
+      reports.some((r) => r.summary.includes('PASS')),
+      'expected a PASS report',
+    );
   });
 });
 
@@ -270,10 +263,7 @@ describe('e2e: artifact sanity', () => {
           'acceptance_decision',
           'deployment_record',
         ];
-        assert.ok(
-          expectedKinds.includes(a.kind),
-          `unexpected artifact kind: ${a.kind}`,
-        );
+        assert.ok(expectedKinds.includes(a.kind), `unexpected artifact kind: ${a.kind}`);
         assert.ok(a.agentId.length > 0, `artifact missing agentId: ${a.id}`);
         assert.ok(a.createdAt.length > 0, `artifact missing createdAt: ${a.id}`);
         assert.ok(a.summary.length > 0, `artifact missing summary: ${a.id}`);

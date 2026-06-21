@@ -6,22 +6,22 @@
  * LLM-tagged artifacts at each step.
  */
 
-import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { after, before, describe, it } from 'node:test';
 
-import { AgentRegistry, AuditLog, Storage } from '@rdma/core';
-import { Pipeline } from '@rdma/coordinator';
-import { createResearchAgent } from '@rdma/research';
-import { createCoordinatorAgent } from '@rdma/coordinator';
-import { createDesignerAgent } from '@rdma/designer';
-import { createPmAgent } from '@rdma/pm';
-import { createDevAgent } from '@rdma/dev';
-import { createQaAgent } from '@rdma/qa';
 import { createBossAgent } from '@rdma/boss';
+import { Pipeline } from '@rdma/coordinator';
+import { createCoordinatorAgent } from '@rdma/coordinator';
+import { AgentRegistry, AuditLog, Storage } from '@rdma/core';
+import { createDesignerAgent } from '@rdma/designer';
+import { createDevAgent } from '@rdma/dev';
 import { createMockProvider } from '@rdma/llm/mock';
+import { createPmAgent } from '@rdma/pm';
+import { createQaAgent } from '@rdma/qa';
+import { createResearchAgent } from '@rdma/research';
 
 function makeTmpRoot(): string {
   return path.join(tmpdir(), `rdma-e2e-llm-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -81,16 +81,9 @@ describe('e2e: full pipeline with mock LLM', () => {
         // 4: Dev implementation
         '## Plan\nTwo files.\n\n## Code (sketch)\n```ts\nexport const c = 1;\n```',
         // 5: QA PASS
-        [
-          '## Result: PASS',
-          '',
-          '## Checks',
-          '- [x] A',
-          '- [x] B',
-          '',
-          '## Summary',
-          'Ship.',
-        ].join('\n'),
+        ['## Result: PASS', '', '## Checks', '- [x] A', '- [x] B', '', '## Summary', 'Ship.'].join(
+          '\n',
+        ),
       ],
     });
 
@@ -122,7 +115,10 @@ describe('e2e: full pipeline with mock LLM', () => {
 
     // The LLM-tagged artifacts come from PM, Dev, QA
     const llmArtifacts = final.artifacts.filter((a) => a.summary.includes('LLM'));
-    assert.ok(llmArtifacts.length >= 4, `expected >=4 LLM-tagged artifacts, got ${llmArtifacts.length}`);
+    assert.ok(
+      llmArtifacts.length >= 4,
+      `expected >=4 LLM-tagged artifacts, got ${llmArtifacts.length}`,
+    );
 
     // PRD was LLM-generated — verify it contains the mock's "Convert JSON arrays"
     const prd = final.artifacts.find((a) => a.kind === 'prd');
@@ -144,14 +140,7 @@ describe('e2e: full pipeline with mock LLM', () => {
 
     // Handoff chain is clean
     const chain = await audit.handoffChain(final.id, final.projectId);
-    assert.deepEqual(chain, [
-      'market_research',
-      'coordinator',
-      'pm',
-      'dev',
-      'qa',
-      'boss',
-    ]);
+    assert.deepEqual(chain, ['market_research', 'coordinator', 'pm', 'dev', 'qa', 'boss']);
   });
 });
 
@@ -183,11 +172,8 @@ describe('e2e: pipeline with LLM QA fails then succeeds', () => {
       async complete(req: { messages: Array<{ content: string }> }) {
         llmCallCount++;
         this.calls.push({ request: req });
-        const isQA =
-          req.messages.some((m) => m.content.includes('QA engineer')) ?? false;
-        const verdict = isQA
-          ? (llmCallCount === 5 ? 'FAIL' : 'PASS')
-          : 'OK';
+        const isQA = req.messages.some((m) => m.content.includes('QA engineer')) ?? false;
+        const verdict = isQA ? (llmCallCount === 5 ? 'FAIL' : 'PASS') : 'OK';
         const text = isQA
           ? `## Result: ${verdict}\n## Checks\n- [${verdict === 'PASS' ? 'x' : ' '}] edge\n## Summary\n${verdict === 'PASS' ? 'Ship.' : 'Fix.'}`
           : 'ok content';
