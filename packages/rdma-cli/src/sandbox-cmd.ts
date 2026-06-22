@@ -8,6 +8,9 @@
  *   --proposal <id>            proposal id (e.g. P-20260621-009)
  *   --files <path>=<content>  one or more files to write
  *   --test-command <cmd>       test command recorded in the patch bundle
+ *   --dry-run                  preview without writing to disk
+ *   --pr-draft                 emit a PR-ready draft (title/body/patch text)
+ *   --pr-title <text>          custom PR title (defaults to proposal id)
  *
  * The command is intentionally read-only against the source tree: it
  * writes only under <workspaceRoot>/<projectId>/<proposalId>/ and
@@ -23,6 +26,7 @@ import {
   buildDeliveryPlan,
   buildSandboxPreview,
   executeSandboxPatch,
+  formatPrDraft,
 } from '@rdma/delivery-control';
 
 export interface SandboxApplyParsedArgs {
@@ -32,6 +36,8 @@ export interface SandboxApplyParsedArgs {
   testCommand: string;
   files: Array<SandboxPatchFile>;
   dryRun: boolean;
+  prDraft: boolean;
+  prTitle: string;
 }
 
 export interface SandboxApplyIo {
@@ -45,6 +51,8 @@ export function parseSandboxApplyArgs(argv: ReadonlyArray<string>): SandboxApply
   let projectId = 'PRJ-20260621-001';
   let testCommand = 'npm test';
   let dryRun = false;
+  let prDraft = false;
+  let prTitle = '';
   const files: Array<SandboxPatchFile> = [];
 
   for (let i = 0; i < argv.length; i++) {
@@ -94,10 +102,31 @@ export function parseSandboxApplyArgs(argv: ReadonlyArray<string>): SandboxApply
     }
     if (arg === '--dry-run') {
       dryRun = true;
+      continue;
+    }
+    if (arg === '--pr-draft') {
+      prDraft = true;
+      continue;
+    }
+    if (arg === '--pr-title') {
+      const next = argv[i + 1];
+      if (typeof next === 'string') {
+        prTitle = next;
+        i++;
+      }
     }
   }
 
-  return { workspaceRoot, proposalId, projectId, testCommand, files, dryRun };
+  return {
+    workspaceRoot,
+    proposalId,
+    projectId,
+    testCommand,
+    files,
+    dryRun,
+    prDraft,
+    prTitle,
+  };
 }
 
 export function buildSandboxPlan(parsed: SandboxApplyParsedArgs): DeliveryPlan {
@@ -128,10 +157,31 @@ export async function cmdSandboxApply(
   }
 
   const plan = buildSandboxPlan(parsed);
-  if (parsed.dryRun) {
-    const preview = buildSandboxPreview(parsed);
+  if (parsed.dryRun || parsed.prDraft) {
+    const preview = buildSandboxPreview({
+      workspaceRoot: parsed.workspaceRoot,
+      proposalId: parsed.proposalId,
+      projectId: parsed.projectId,
+      testCommand: parsed.testCommand,
+      files: parsed.files,
+    });
     if (!preview.allowed) {
       io.stderr.write(`rdma sandbox apply: ${preview.reason}\n`);
+      return;
+    }
+    if (parsed.prDraft) {
+      const draft = formatPrDraft({
+        proposalId: parsed.proposalId,
+        title: parsed.prTitle || `Sandbox apply for ${parsed.proposalId}`,
+        body: 'Auto-generated from `rdma sandbox apply --pr-draft`.',
+        patch: {
+          allowed: preview.allowed,
+          writtenFiles: preview.writtenFiles,
+          patchBundle: preview.patchBundle,
+          reason: preview.reason,
+        },
+      });
+      io.stdout.write(`# ${draft.title}\n\n${draft.body}\n# patch\n${draft.patchText}\n`);
       return;
     }
     io.stdout.write(`sandbox preview for ${parsed.proposalId} (dry-run)\n`);
@@ -142,7 +192,7 @@ export async function cmdSandboxApply(
     }
     io.stdout.write(`  test: ${preview.commands.join(', ')}\n`);
     io.stdout.write(`  patch-bytes: ${preview.patchBundle.length}\n`);
-    io.stdout.write(preview.report);
+    io.stdout.write(preview.report ?? '');
     return;
   }
   const result = executeSandboxPatch(plan, {

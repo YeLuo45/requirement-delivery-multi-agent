@@ -3,7 +3,7 @@
  * at /api/proposals and /api/proposals/:id.
  */
 
-import { promises as fs } from 'node:fs';
+import { promises as fs, existsSync } from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
 
@@ -191,17 +191,21 @@ export function rdmaApiPlugin(dataRoot: string): Plugin {
         }
       });
 
-      server.middlewares.use('/api/control-plane/cost', async (_req, res) => {
+      server.middlewares.use('/api/control-plane/cost', async (req, res) => {
         try {
-          const { renderControlPlanePanel } = await import('@rdma/delivery-control');
+          const { parseLedgerFromDisk, loadLedgerFromStorage, renderControlPlanePanel } =
+            await import('@rdma/delivery-control');
+          const proposalId = req.url?.split('?')[0]?.split('/').pop();
+          const ledgerPath = proposalId
+            ? path.join(dataRoot, 'ledgers', `${proposalId}.ledger.json`)
+            : null;
+          const snapshot =
+            ledgerPath && existsSync(ledgerPath)
+              ? loadLedgerFromStorage(parseLedgerFromDisk(ledgerPath))
+              : { proposalId: 'panel', maxUsd: 1, spentUsd: 0, remainingUsd: 1, records: [] };
           const text = renderControlPlanePanel({
-            metrics: { counters: {} },
-            snapshot: {
-              proposalId: 'panel',
-              maxUsd: 1,
-              spentUsd: 0,
-              remainingUsd: 1,
-            },
+            metrics: { counters: { rdma_cost_records: snapshot.records.length } },
+            snapshot,
             mode: 'prom',
           });
           res.setHeader('Content-Type', 'text/plain; version=0.0.4');

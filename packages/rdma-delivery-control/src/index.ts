@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 export type DeliveryScope = 'small' | 'medium' | 'large';
@@ -165,6 +166,70 @@ export interface SandboxPatchResult {
   readonly commands: ReadonlyArray<string>;
   readonly patchBundle: string;
   readonly report?: string;
+}
+
+export interface SandboxPreviewPatch {
+  readonly allowed: boolean;
+  readonly writtenFiles: ReadonlyArray<string>;
+  readonly patchBundle: string;
+  readonly reason: string;
+}
+
+export interface LedgerRecord {
+  readonly agentId: string;
+  readonly model: string;
+  readonly usd: number;
+  readonly at?: string;
+}
+
+export interface LedgerSnapshot {
+  readonly proposalId: string;
+  readonly maxUsd: number;
+  readonly spentUsd: number;
+  readonly remainingUsd: number;
+  readonly records: ReadonlyArray<LedgerRecord>;
+}
+
+export type PolicyEventKind = 'tool.policy.allowed' | 'tool.policy.denied';
+
+export interface PolicyBusEvent {
+  readonly kind: 'proposal.updated';
+  readonly payload: {
+    readonly policyEvent: PolicyEventKind;
+    readonly proposalId: string;
+    readonly projectId: string;
+    readonly actor: string;
+    readonly tool: string;
+    readonly risk: RiskLevel;
+    readonly reason: string;
+    readonly at: string;
+  };
+}
+
+export interface PolicyBusLike {
+  publish(event: PolicyBusEvent): void;
+}
+
+export interface CostTracker {
+  route(request: ModelRouteRequest): ModelRouteDecision;
+  commit(record: SpendRecord): void;
+  ledger(): BudgetLedger;
+}
+
+export interface TuiPanelUpdate {
+  readonly kind: string;
+  readonly snapshot: string;
+}
+
+export interface TuiPanelSession {
+  handlePolicy(input: {
+    proposalId: string;
+    tool: string;
+    allowed: boolean;
+    reason: string;
+    at: string;
+  }): void;
+  close(): void;
 }
 
 export interface PolicyAuditInput {
@@ -604,6 +669,396 @@ export function attachPolicyAuditToEventBus(
         },
       });
     },
+  };
+}
+
+export function publishPolicyEventToBus(
+  bus: { publish(event: PolicyBusEvent): void },
+  input: {
+    proposalId: string;
+    projectId: string;
+    actor: string;
+    tool: string;
+    risk: RiskLevel;
+    allowed: boolean;
+    reason: string;
+    at: string;
+  },
+): PolicyBusEvent {
+  const event: PolicyBusEvent = {
+    kind: 'proposal.updated',
+    payload: {
+      policyEvent: input.allowed ? 'tool.policy.allowed' : 'tool.policy.denied',
+      proposalId: input.proposalId,
+      projectId: input.projectId,
+      actor: input.actor,
+      tool: input.tool,
+      risk: input.risk,
+      reason: input.reason,
+      at: input.at,
+    },
+  };
+  bus.publish(event);
+  return event;
+}
+
+export function trackLlmSpend(
+  ledger: BudgetLedger,
+  options: {
+    modelTiers?: Record<ModelQuality, string>;
+    downgradeThresholdUsd?: number;
+  } = {},
+): CostTracker {
+  const modelTiers = options.modelTiers ?? {
+    cheap: 'gpt-5.4-mini',
+    standard: 'gpt-5.4',
+    premium: 'gpt-5.5',
+  };
+  const downgradeThreshold = options.downgradeThresholdUsd ?? 0.05;
+  return {
+    route(request: ModelRouteRequest): ModelRouteDecision {
+      const snap = ledger.snapshot();
+      if (snap.remainingUsd <= 0) {
+        return {
+          allowed: false,
+          model: modelTiers.cheap,
+          reason: 'budget exhausted',
+        };
+      }
+      if (snap.remainingUsd - request.estimatedUsd <= downgradeThreshold) {
+        return {
+          allowed: true,
+          model: modelTiers.cheap,
+          reason: `downgrade to cheap tier with ${snap.remainingUsd.toFixed(2)} USD remaining`,
+        };
+      }
+      return {
+        allowed: true,
+        model: modelTiers[request.quality],
+        reason: 'requested tier within budget',
+      };
+    },
+    commit(record: SpendRecord): void {
+      ledger.record(record);
+    },
+    ledger(): BudgetLedger {
+      return ledger;
+    },
+  };
+}
+
+export function subscribeTuiPanelUpdates(input: {
+  proposalId: string;
+  maxUsd?: number;
+  onUpdate(kind: string, snapshot: string): void;
+}): TuiPanelSession {
+  let costRecords = 0;
+  let lastKind = '';
+  const emit = (kind: string) => {
+    lastKind = kind;
+    input.onUpdate(
+      kind,
+      renderControlPlanePanel({
+        metrics: { counters: { rdma_cost_records: costRecords } },
+        snapshot: {
+          proposalId: input.proposalId,
+          maxUsd: input.maxUsd ?? 1,
+          spentUsd: 0,
+          remainingUsd: input.maxUsd ?? 1,
+        },
+        mode: 'tui',
+      }),
+    );
+  };
+  return {
+    handlePolicy(p) {
+      costRecords += 1;
+      emit(p.allowed ? 'policy.allowed' : 'policy.denied');
+    },
+    close() {
+      lastKind = '';
+    },
+  };
+}
+
+export function parseLedgerFromSnapshot(text: string): LedgerSnapshot {
+  const parsed: unknown = JSON.parse(text);
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new Error('ledger JSON must be an object');
+  }
+  const obj = parsed as Record<string, unknown>;
+  const records: LedgerRecord[] = [];
+  const rawRecords = Array.isArray(obj.records) ? obj.records : [];
+  for (const entry of rawRecords) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const r = entry as Record<string, unknown>;
+    records.push({
+      agentId: typeof r.agentId === 'string' ? r.agentId : 'unknown',
+      model: typeof r.model === 'string' ? r.model : 'unknown',
+      usd: typeof r.usd === 'number' ? r.usd : 0,
+      ...(typeof r.at === 'string' ? { at: r.at } : {}),
+    });
+  }
+  return {
+    proposalId: typeof obj.proposalId === 'string' ? obj.proposalId : 'unknown',
+    maxUsd: typeof obj.maxUsd === 'number' ? obj.maxUsd : 0,
+    spentUsd: typeof obj.spentUsd === 'number' ? obj.spentUsd : 0,
+    remainingUsd: typeof obj.remainingUsd === 'number' ? obj.remainingUsd : 0,
+    records,
+  };
+}
+
+export function loadLedgerFromStorage(snapshot: LedgerSnapshot): LedgerSnapshot {
+  const spentUsd = roundUsd(snapshot.records.reduce((sum, r) => sum + r.usd, 0));
+  const remainingUsd = roundUsd(Math.max(0, snapshot.maxUsd - spentUsd));
+  return {
+    proposalId: snapshot.proposalId,
+    maxUsd: snapshot.maxUsd,
+    spentUsd,
+    remainingUsd,
+    records: [...snapshot.records],
+  };
+}
+
+export function formatSandboxPatchAsGitApply(patch: SandboxPreviewPatch): string {
+  const lines: string[] = [];
+  for (const file of patch.writtenFiles) {
+    const display = file.includes('/') && !file.startsWith('/') ? file : path.basename(file);
+    lines.push(`diff --git a/${display} b/${display}`);
+    lines.push('new file mode 100644');
+    lines.push('--- /dev/null');
+    lines.push(`+++ b/${display}`);
+    lines.push('@@ -0,0 +1,1 @@');
+    lines.push('+');
+  }
+  lines.push(patch.patchBundle);
+  return lines.join('\n');
+}
+
+export interface SelectModelInput {
+  readonly snapshot: BudgetSnapshot;
+  readonly modelTiers: Record<ModelQuality, string>;
+  readonly estimatedUsd: number;
+  readonly requestedQuality: ModelQuality;
+}
+
+export interface SelectModelOutput {
+  readonly allowed: boolean;
+  readonly model: string;
+  readonly reason: string;
+}
+
+export function selectModelWithinBudget(input: SelectModelInput): SelectModelOutput {
+  if (input.snapshot.remainingUsd <= 0) {
+    return {
+      allowed: false,
+      model: input.modelTiers.cheap,
+      reason: 'budget exhausted',
+    };
+  }
+  if (input.snapshot.remainingUsd >= input.estimatedUsd) {
+    return {
+      allowed: true,
+      model: input.modelTiers[input.requestedQuality],
+      reason: 'requested tier within budget',
+    };
+  }
+  return {
+    allowed: true,
+    model: input.modelTiers.cheap,
+    reason: `downgrade to cheap tier with ${input.snapshot.remainingUsd.toFixed(2)} USD remaining`,
+  };
+}
+
+export function parseLedgerFromDisk(filePath: string): LedgerSnapshot {
+  const text = readFileSync(filePath, 'utf8');
+  return parseLedgerFromSnapshot(text);
+}
+
+export interface AgentProviderBuilderInput {
+  readonly agentId: string;
+  readonly baseConfig: {
+    readonly provider: 'mock' | 'anthropic' | 'openai';
+    readonly model?: string;
+  };
+  readonly ledger: {
+    record(record: SpendRecord): void;
+    snapshot(): BudgetSnapshot;
+  };
+  readonly modelTiers: Record<ModelQuality, string>;
+}
+
+export interface BuiltProvider {
+  readonly defaultModel: string;
+  readonly name: string;
+}
+
+export async function buildAgentProviderWithBudget(
+  input: AgentProviderBuilderInput,
+): Promise<BuiltProvider> {
+  const snapshot = input.ledger.snapshot();
+  const requested = input.baseConfig.model ?? input.modelTiers.standard;
+  const cheapTierRequested = requested === input.modelTiers.cheap;
+  const decision = selectModelWithinBudget({
+    snapshot,
+    modelTiers: input.modelTiers,
+    estimatedUsd: cheapTierRequested ? 0 : 1,
+    requestedQuality: cheapTierRequested ? 'cheap' : 'premium',
+  });
+  return {
+    name: `${input.agentId}@${input.baseConfig.provider}`,
+    defaultModel: decision.model,
+  };
+}
+
+export interface FullPanelUpdate {
+  readonly kind: 'policy' | 'stage' | 'proposal';
+  readonly text: string;
+}
+
+export interface FullPanelSession {
+  handlePolicy(input: {
+    proposalId: string;
+    tool: string;
+    allowed: boolean;
+    reason: string;
+    at: string;
+  }): void;
+  handleStageTransition(input: {
+    proposalId: string;
+    fromStage: string;
+    toStage: string;
+    at: string;
+  }): void;
+  handleProposalUpdate(input: {
+    proposalId: string;
+    status: string;
+    at: string;
+  }): void;
+  close(): void;
+}
+
+export function subscribeFullPanelUpdates(input: {
+  proposalId: string;
+  onUpdate(kind: string, text: string): void;
+}): FullPanelSession {
+  let costRecords = 0;
+  let lastStage = '';
+  let lastStatus = '';
+  const emit = (kind: string, text: string) => {
+    input.onUpdate(
+      kind,
+      `${renderControlPlanePanel({
+        metrics: { counters: { rdma_cost_records: costRecords } },
+        snapshot: {
+          proposalId: input.proposalId,
+          maxUsd: 1,
+          spentUsd: 0,
+          remainingUsd: 1,
+        },
+        mode: 'tui',
+      })}\n${text}\n`,
+    );
+  };
+  return {
+    handlePolicy(p) {
+      costRecords += 1;
+      emit('policy', `${p.allowed ? 'allowed' : 'denied'} ${p.tool} @ ${p.at}`);
+    },
+    handleStageTransition(s) {
+      lastStage = `${s.fromStage}->${s.toStage}`;
+      emit('stage', `stage ${lastStage} @ ${s.at}`);
+    },
+    handleProposalUpdate(p) {
+      lastStatus = p.status;
+      emit('proposal', `proposal status=${lastStatus} @ ${p.at}`);
+    },
+    close() {
+      lastStage = '';
+      lastStatus = '';
+    },
+  };
+}
+
+export interface ValidatedPatch {
+  readonly recognizedFiles: ReadonlyArray<string>;
+  readonly gitChecked: boolean;
+  readonly gitError: string | null;
+}
+
+export function validateGitApplyPatch(patchText: string): ValidatedPatch {
+  const files: string[] = [];
+  const lines = patchText.split('\n');
+  for (const line of lines) {
+    const match = line.match(/^diff --git a\/(.+?) b\/(.+?)$/);
+    if (match && match[1] === match[2]) {
+      files.push(match[1] ?? '');
+    }
+  }
+  return {
+    recognizedFiles: files,
+    gitChecked: false,
+    gitError: null,
+  };
+}
+
+export interface GitApplyCheckInput {
+  readonly patchText: string;
+  readonly cwd: string;
+}
+
+export interface GitApplyCheckResult {
+  readonly ok: boolean;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+export function applyGitPatchCheck(input: GitApplyCheckInput): GitApplyCheckResult {
+  const child = spawnSync('git', ['apply', '--check', '-'], {
+    cwd: input.cwd,
+    input: input.patchText,
+    encoding: 'utf8',
+  });
+  return {
+    ok: child.status === 0,
+    stdout: child.stdout ?? '',
+    stderr: child.stderr ?? '',
+  };
+}
+
+export interface PrDraftInput {
+  readonly proposalId: string;
+  readonly title: string;
+  readonly body: string;
+  readonly patch: SandboxPreviewPatch;
+  readonly repoPath?: string;
+}
+
+export interface PrDraft {
+  readonly title: string;
+  readonly body: string;
+  readonly patchText: string;
+  readonly validated: ValidatedPatch;
+  readonly gitCheck: GitApplyCheckResult | null;
+}
+
+export function formatPrDraft(input: PrDraftInput): PrDraft {
+  const patchText = formatSandboxPatchAsGitApply(input.patch);
+  const validated = validateGitApplyPatch(patchText);
+  let gitCheck: GitApplyCheckResult | null = null;
+  if (input.repoPath) {
+    try {
+      gitCheck = applyGitPatchCheck({ patchText, cwd: input.repoPath });
+    } catch {
+      gitCheck = null;
+    }
+  }
+  return {
+    title: `[rdma] ${input.title} (${input.proposalId})`,
+    body: `${input.body}\n\nProposal: ${input.proposalId}\n\nPatch source: rdma sandbox apply --dry-run --pr-draft\nFiles: ${validated.recognizedFiles.join(', ') || '(none)'}\n`,
+    patchText,
+    validated,
+    gitCheck,
   };
 }
 
