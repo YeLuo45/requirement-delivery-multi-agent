@@ -144,6 +144,9 @@ function findHandler(plugin, rootOverride) {
         else if (route === '/api/acceptance-evidence') this._acceptanceEvidence = handler;
         else if (route === '/api/release-history') this._releaseHistory = handler;
         else if (route === '/api/release-ops') this._releaseOps = handler;
+        else if (route === '/api/release-ops/actions') this._releaseOpsActions = handler;
+        else if (route === '/api/release-diff') this._releaseDiff = handler;
+        else if (route === '/api/workflow-runs') this._workflowRuns = handler;
       },
     },
   };
@@ -156,6 +159,9 @@ function findHandler(plugin, rootOverride) {
     acceptanceEvidence: fakeServer.middlewares._acceptanceEvidence,
     releaseHistory: fakeServer.middlewares._releaseHistory,
     releaseOps: fakeServer.middlewares._releaseOps,
+    releaseOpsActions: fakeServer.middlewares._releaseOpsActions,
+    releaseDiff: fakeServer.middlewares._releaseDiff,
+    workflowRuns: fakeServer.middlewares._workflowRuns,
   };
 }
 
@@ -403,6 +409,90 @@ describe('rdma-web vite plugin', () => {
       assert.equal(payload.failedGateQueue[0].proposalId, 'P-ops');
       assert.equal(payload.failedGateQueue[0].gateLabel, 'build');
       assert.match(payload.remediationMarkdown, /Fix build/);
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+
+  it('GET release operations companion APIs return actions, diff rows, and workflow status', async () => {
+    const fresh = mkdtempSync(path.join(tmpdir(), 'rdma-web-release-companion-'));
+    try {
+      const proposalRoot = path.join(fresh, 'proposals', 'PRJ-ops');
+      const historyRoot = path.join(fresh, 'release-local');
+      mkdirSync(proposalRoot, { recursive: true });
+      mkdirSync(historyRoot, { recursive: true });
+      writeFileSync(
+        path.join(proposalRoot, 'P-clean.json'),
+        JSON.stringify({
+          id: 'P-clean',
+          projectId: 'PRJ-ops',
+          title: 'Clean release',
+          status: 'accepted',
+          createdAt: '2026-06-24T00:00:00.000Z',
+          updatedAt: '2026-06-24T00:00:00.000Z',
+          artifacts: [],
+          tags: {},
+        }),
+      );
+      writeFileSync(
+        path.join(historyRoot, 'clean.json'),
+        JSON.stringify({
+          proposalId: 'P-clean',
+          generatedAt: '2026-06-24T03:00:00.000Z',
+          historyPath: 'artifacts/release-local/clean.json',
+          gateResults: [
+            { label: 'build', status: 'pass', exitCode: 0, durationMs: 20, checklist: [] },
+          ],
+          dirty: {
+            readmeDemoJson: ['PRJ-ops/P-clean.json'],
+            ordinaryDirty: ['packages/x/src/a.ts'],
+          },
+          ownership: {
+            proposalId: 'P-clean',
+            sourceFiles: ['packages/x/src/a.ts'],
+            testFiles: ['packages/x/test/a.test.ts'],
+            docs: [],
+            generated: ['PRJ-ops/P-clean.json'],
+            other: [],
+          },
+        }),
+      );
+      writeFileSync(
+        path.join(historyRoot, 'workflow-runs.json'),
+        JSON.stringify([
+          {
+            id: 2,
+            name: 'Release',
+            status: 'completed',
+            conclusion: 'success',
+            url: 'https://example.test/2',
+            updatedAt: '2026-06-24T04:00:00.000Z',
+          },
+        ]),
+      );
+      const mod = await loadPlugin();
+      const { releaseOpsActions, releaseDiff, workflowRuns } = findHandler(mod, fresh);
+
+      const actionsRes = newResponse();
+      await releaseOpsActions(fakeRequest('/api/release-ops/actions'), actionsRes, () => undefined);
+      assert.equal(actionsRes.statusCode, 200);
+      const actions = JSON.parse(actionsRes.body);
+      assert.match(actions.primaryActions[0].copyText, /--execute/);
+      assert.equal(actions.artifactLinks.length, 4);
+
+      const diffRes = newResponse();
+      await releaseDiff(fakeRequest('/api/release-diff'), diffRes, () => undefined);
+      assert.equal(diffRes.statusCode, 200);
+      const diff = JSON.parse(diffRes.body);
+      assert.equal(diff.rows[0].proposalId, 'P-clean');
+      assert.equal(diff.rows[0].sourceCount, 1);
+
+      const workflowRes = newResponse();
+      await workflowRuns(fakeRequest('/api/workflow-runs'), workflowRes, () => undefined);
+      assert.equal(workflowRes.statusCode, 200);
+      const workflow = JSON.parse(workflowRes.body);
+      assert.deepEqual(workflow.summary, { total: 1, passing: 1, failing: 0, running: 0 });
+      assert.equal(workflow.rows[0].badge, 'passing');
     } finally {
       rmSync(fresh, { recursive: true, force: true });
     }

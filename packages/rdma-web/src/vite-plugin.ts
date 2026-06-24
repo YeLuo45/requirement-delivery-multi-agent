@@ -11,6 +11,14 @@ import {
   renderReleaseOpsAutomationJson,
 } from '../../rdma-cli/src/release-ops.js';
 import { buildAcceptanceEvidenceDashboard } from './acceptance-evidence.js';
+import {
+  type WorkflowRunStatusInput,
+  buildReleaseArtifactDiffViewer,
+  buildReleaseOpsActionPanel,
+  buildSafeStatusApplyPlan,
+  buildWorkflowRunStatusDashboard,
+} from './delivery-history.js';
+import { buildDirtyFileOwnershipGuard, buildReleaseArtifactBrowser } from './delivery-history.js';
 import { buildOperatorConsoleModel } from './operator-console.js';
 
 interface AuditEntry {
@@ -196,7 +204,7 @@ async function readReleaseHistoryRecords(
   const files = await fs.readdir(historyRoot).catch(() => []);
   const records: Array<{ generatedAt: string }> = [];
   for (const file of files) {
-    if (!file.endsWith('.json')) continue;
+    if (!file.endsWith('.json') || file === 'workflow-runs.json') continue;
     const content = await fs.readFile(path.join(historyRoot, file), 'utf8').catch(() => '');
     if (!content) continue;
     const record = JSON.parse(content) as { generatedAt?: string };
@@ -204,6 +212,26 @@ async function readReleaseHistoryRecords(
   }
   records.sort((left, right) => right.generatedAt.localeCompare(left.generatedAt));
   return records;
+}
+
+async function readWorkflowRuns(dataRoot: string): Promise<WorkflowRunStatusInput[]> {
+  const content = await fs
+    .readFile(path.join(dataRoot, 'release-local', 'workflow-runs.json'), 'utf8')
+    .catch(() => '[]');
+  const parsed = JSON.parse(content) as unknown;
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((item): item is WorkflowRunStatusInput => {
+    if (typeof item !== 'object' || item === null) return false;
+    const candidate = item as Partial<WorkflowRunStatusInput>;
+    return (
+      typeof candidate.id === 'number' &&
+      typeof candidate.name === 'string' &&
+      typeof candidate.status === 'string' &&
+      (typeof candidate.conclusion === 'string' || candidate.conclusion === null) &&
+      typeof candidate.url === 'string' &&
+      typeof candidate.updatedAt === 'string'
+    );
+  });
 }
 
 export function rdmaApiPlugin(dataRoot: string): Plugin {
@@ -339,6 +367,58 @@ export function rdmaApiPlugin(dataRoot: string): Plugin {
               format === 'automation' ? renderReleaseOpsAutomationJson(payload) : payload,
             ),
           );
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+
+      server.middlewares.use('/api/release-ops/actions', async (_req, res) => {
+        try {
+          const payload = await buildReleaseOpsPayload(dataRoot, {});
+          const automation = renderReleaseOpsAutomationJson(payload);
+          const histories = await readReleaseHistoryRecords(dataRoot);
+          const safePlan = buildSafeStatusApplyPlan(automation.statusSuggestions);
+          const guard = buildDirtyFileOwnershipGuard(payload.commitManifests);
+          const artifacts = buildReleaseArtifactBrowser(histories as never);
+          const panel = buildReleaseOpsActionPanel({
+            safeStatusActions: safePlan.safe,
+            stageCommands: guard.safeStageCommands,
+            artifactPaths: artifacts.items.flatMap((item) => [
+              item.artifacts.releaseJson,
+              item.artifacts.summaryMarkdown,
+              item.artifacts.commitManifestJson,
+              item.artifacts.diffJson,
+            ]),
+          });
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(panel));
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+
+      server.middlewares.use('/api/release-diff', async (_req, res) => {
+        try {
+          const histories = await readReleaseHistoryRecords(dataRoot);
+          const payload = buildReleaseArtifactDiffViewer(histories as never);
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(payload));
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+
+      server.middlewares.use('/api/workflow-runs', async (_req, res) => {
+        try {
+          const payload = buildWorkflowRunStatusDashboard(await readWorkflowRuns(dataRoot));
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(payload));
         } catch (err) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');

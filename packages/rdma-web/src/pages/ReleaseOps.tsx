@@ -4,9 +4,14 @@ import {
   type DeliveryHistoryRecord,
   type FailedReleaseGate,
   type SafeStatusSuggestionInput,
+  buildCiEvidenceNotesArtifact,
   buildDirtyFileOwnershipGuard,
+  buildReadmeVerifierSandboxPlan,
   buildReleaseArtifactBrowser,
+  buildReleaseArtifactDiffViewer,
+  buildReleaseOpsActionPanel,
   buildSafeStatusApplyPlan,
+  buildWorkflowRunStatusDashboard,
 } from '../delivery-history.js';
 
 interface ReleaseOpsPayload {
@@ -55,6 +60,29 @@ export function ReleaseOps() {
   const safePlan = buildSafeStatusApplyPlan(automation?.statusSuggestions ?? []);
   const guard = buildDirtyFileOwnershipGuard(ops.commitManifests);
   const artifacts = buildReleaseArtifactBrowser(history);
+  const actionPanel = buildReleaseOpsActionPanel({
+    safeStatusActions: safePlan.safe,
+    stageCommands: guard.safeStageCommands,
+    artifactPaths: artifacts.items.flatMap((item) => [
+      item.artifacts.releaseJson,
+      item.artifacts.summaryMarkdown,
+      item.artifacts.commitManifestJson,
+      item.artifacts.diffJson,
+    ]),
+  });
+  const ciEvidence = buildCiEvidenceNotesArtifact({
+    generatedAt: new Date(0).toISOString(),
+    failedGateCount: ops.failedGateQueue.length,
+    artifactPaths: actionPanel.artifactLinks.map((link) => link.href),
+    statusSuggestions: automation?.statusSuggestions ?? [],
+  });
+  const diffViewer = buildReleaseArtifactDiffViewer(history);
+  const readmeSandbox = buildReadmeVerifierSandboxPlan({
+    repoRoot: '.',
+    sandboxRoot: '/tmp/rdma-readme-verify',
+    commands: ['npm run verify:readme'],
+  });
+  const workflowDashboard = buildWorkflowRunStatusDashboard([]);
 
   return (
     <section className="stack">
@@ -89,6 +117,54 @@ export function ReleaseOps() {
         {safePlan.safe.map((action) => (
           <code key={action.proposalId}>{action.dryRunCommand}</code>
         ))}
+      </div>
+
+      <div className="card">
+        <h2>Action Panel</h2>
+        {actionPanel.primaryActions.length === 0 ? <p>No copy-ready actions.</p> : null}
+        {actionPanel.primaryActions.map((action) => (
+          <article key={`${action.label}-${action.copyText}`} className="row-card">
+            <strong>{action.label}</strong>
+            <code>{action.copyText}</code>
+          </article>
+        ))}
+      </div>
+
+      <div className="card">
+        <h2>CI Evidence Notes</h2>
+        <pre>{ciEvidence}</pre>
+      </div>
+
+      <div className="card">
+        <h2>Artifact Diff Viewer</h2>
+        {diffViewer.rows.map((row) => (
+          <article key={`${row.proposalId}-${row.generatedAt}`} className="row-card">
+            <strong>{row.proposalId}</strong> source={row.sourceCount} test={row.testCount} docs=
+            {row.docsCount} generated={row.generatedCount} other={row.otherCount}
+            <ul>
+              {row.previewPaths.map((file) => (
+                <li key={file}>{file}</li>
+              ))}
+            </ul>
+          </article>
+        ))}
+      </div>
+
+      <div className="card">
+        <h2>README Verifier Sandbox</h2>
+        <p>Mutates original workspace: {String(readmeSandbox.mutatesOriginalWorkspace)}</p>
+        {[...readmeSandbox.setupCommands, ...readmeSandbox.verificationCommands].map((command) => (
+          <code key={command}>{command}</code>
+        ))}
+      </div>
+
+      <div className="card">
+        <h2>Workflow Run Status</h2>
+        <p>
+          Total: {workflowDashboard.summary.total} · Passing: {workflowDashboard.summary.passing} ·
+          Failing: {workflowDashboard.summary.failing} · Running:{' '}
+          {workflowDashboard.summary.running}
+        </p>
       </div>
 
       <div className="card">

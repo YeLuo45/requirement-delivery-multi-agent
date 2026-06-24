@@ -4,10 +4,11 @@ import {
   type CommitManifestSummary,
   type DeliveryHistoryProposal,
   type DeliveryHistoryRecord,
+  buildCiEvidenceNotesArtifact,
   buildReleaseOperationsCenter,
 } from '../../rdma-web/src/delivery-history.js';
 
-const RELEASE_OPS_SCHEMA_VERSION = 'release-ops.v1';
+const RELEASE_OPS_SCHEMA_VERSION = 'release-ops.v2';
 
 export interface ReleaseOpsIndexEntry {
   readonly proposalId: string;
@@ -45,6 +46,17 @@ export interface ReleaseOpsPayload {
 
 export interface ReleaseOpsOptions {
   readonly proposalId?: string;
+}
+
+export interface ReleaseOpsApplyStatusPlan {
+  readonly mode: 'dry-run' | 'execute' | 'blocked';
+  readonly commands: ReadonlyArray<string>;
+  readonly text: string;
+}
+
+export interface ReleaseOpsWrittenFile {
+  readonly path: string;
+  readonly content: string;
 }
 
 export async function buildReleaseOpsPayload(
@@ -237,28 +249,120 @@ export function renderReleaseOpsApplyStatusDryRun(
   proposalId: string,
   targetStatus: string,
 ): string {
+  return renderReleaseOpsApplyStatusExecutionPlan(payload, proposalId, targetStatus, {
+    execute: false,
+    mcpHelperPath: 'mcp_aisp.py',
+  }).text;
+}
+
+export function renderReleaseOpsApplyStatusExecutionPlan(
+  payload: ReleaseOpsPayload,
+  proposalId: string,
+  targetStatus: string,
+  options: { readonly execute: boolean; readonly mcpHelperPath: string },
+): ReleaseOpsApplyStatusPlan {
   const suggestion = buildReleaseOpsStatusSuggestions(payload).find(
     (item) => item.proposalId === proposalId,
   );
   if (!suggestion) {
-    return `BLOCKED\n${proposalId}: no safe status suggestion is available.\nNo proposal state was changed.\n`;
+    return {
+      mode: 'blocked',
+      commands: [],
+      text: `BLOCKED\n${proposalId}: no safe status suggestion is available.\nNo proposal state was changed.\n`,
+    };
   }
   if (suggestion.suggestedStatus !== targetStatus) {
-    return [
-      'BLOCKED',
-      `${proposalId}: ${targetStatus} is not a safe next status from ${suggestion.currentStatus}.`,
-      `Suggested next status: ${suggestion.suggestedStatus}`,
+    return {
+      mode: 'blocked',
+      commands: [],
+      text: [
+        'BLOCKED',
+        `${proposalId}: ${targetStatus} is not a safe next status from ${suggestion.currentStatus}.`,
+        `Suggested next status: ${suggestion.suggestedStatus}`,
+        'No proposal state was changed.',
+        '',
+      ].join('\n'),
+    };
+  }
+  const command = `python3 ${options.mcpHelperPath} update-proposal-status --proposal-id ${proposalId} --status ${targetStatus}`;
+  if (options.execute) {
+    return {
+      mode: 'execute',
+      commands: [command],
+      text: [
+        'EXECUTE PLAN',
+        `${proposalId}: ${suggestion.currentStatus} → ${suggestion.suggestedStatus}`,
+        `Reason: ${suggestion.reason}`,
+        command,
+        '',
+      ].join('\n'),
+    };
+  }
+  return {
+    mode: 'dry-run',
+    commands: [],
+    text: [
+      'DRY RUN',
+      `${proposalId}: ${suggestion.currentStatus} → ${suggestion.suggestedStatus}`,
+      `Reason: ${suggestion.reason}`,
       'No proposal state was changed.',
       '',
-    ].join('\n');
+    ].join('\n'),
+  };
+}
+
+export async function writeReleaseOpsDeliveryReportFiles(
+  dataRoot: string,
+  payload: ReleaseOpsPayload,
+  options: { readonly generatedAt: string },
+): Promise<{ readonly files: ReadonlyArray<ReleaseOpsWrittenFile> }> {
+  const automation = renderReleaseOpsAutomationJson(payload);
+  const artifactPaths = payload.releaseIndex.map((entry) => entry.historyPath);
+  const files: ReleaseOpsWrittenFile[] = [
+    {
+      path: path.join(dataRoot, 'release-local', 'delivery-report.md'),
+      content: renderReleaseOpsPrDraft(payload),
+    },
+    {
+      path: path.join(dataRoot, 'release-local', 'ci-evidence.md'),
+      content: buildCiEvidenceNotesArtifact({
+        generatedAt: options.generatedAt,
+        failedGateCount: payload.failedGateQueue.length,
+        artifactPaths,
+        statusSuggestions: automation.statusSuggestions,
+      }),
+    },
+    {
+      path: path.join(dataRoot, 'release-local', 'automation.json'),
+      content: `${JSON.stringify(automation, null, 2)}\n`,
+    },
+  ];
+  for (const file of files) {
+    await fs.mkdir(path.dirname(file.path), { recursive: true });
+    await fs.writeFile(file.path, file.content, 'utf8');
   }
-  return [
-    'DRY RUN',
-    `${proposalId}: ${suggestion.currentStatus} → ${suggestion.suggestedStatus}`,
-    `Reason: ${suggestion.reason}`,
-    'No proposal state was changed.',
-    '',
-  ].join('\n');
+  return { files };
+}
+
+export function renderReleaseOpsRecoveryPlan(
+  payload: ReleaseOpsPayload,
+  options: { readonly mcpHelperPath: string },
+): string {
+  const suggestions = buildReleaseOpsStatusSuggestions(payload);
+  const lines = ['# Proposal MCP Recovery Plan', ''];
+  if (suggestions.length === 0) {
+    lines.push('No safe proposal recovery steps are available.');
+  } else {
+    for (const suggestion of suggestions) {
+      const command = `python3 ${options.mcpHelperPath} update-proposal-status --proposal-id ${suggestion.proposalId} --status ${suggestion.suggestedStatus}`;
+      lines.push(
+        `- ${suggestion.proposalId}: ${suggestion.currentStatus} → ${suggestion.suggestedStatus}`,
+        `  - Reason: ${suggestion.reason}`,
+        `  - Command: ${command}`,
+      );
+    }
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 export async function cmdReleaseOps(argv: string[], dataRoot: string): Promise<void> {
@@ -268,13 +372,28 @@ export async function cmdReleaseOps(argv: string[], dataRoot: string): Promise<v
     flags.proposalId ? { proposalId: flags.proposalId } : {},
   );
   if (flags.applyStatus) {
-    console.log(
-      renderReleaseOpsApplyStatusDryRun(
-        payload,
-        flags.applyStatus.proposalId,
-        flags.applyStatus.to,
-      ),
+    const plan = renderReleaseOpsApplyStatusExecutionPlan(
+      payload,
+      flags.applyStatus.proposalId,
+      flags.applyStatus.to,
+      {
+        execute: flags.execute,
+        mcpHelperPath: flags.mcpHelperPath,
+      },
     );
+    console.log(plan.text);
+    return;
+  }
+  if (flags.writeReports) {
+    const result = await writeReleaseOpsDeliveryReportFiles(dataRoot, payload, {
+      generatedAt: new Date().toISOString(),
+    });
+    console.log(`Wrote ${result.files.length} release report files:`);
+    for (const file of result.files) console.log(`- ${file.path}`);
+    return;
+  }
+  if (flags.recoveryPlan) {
+    console.log(renderReleaseOpsRecoveryPlan(payload, { mcpHelperPath: flags.mcpHelperPath }));
     return;
   }
   if (flags.json) {
@@ -301,6 +420,10 @@ function parseReleaseOpsArgs(argv: ReadonlyArray<string>): {
   fixPrompt: boolean;
   prDraft: boolean;
   ciSummary: boolean;
+  execute: boolean;
+  writeReports: boolean;
+  recoveryPlan: boolean;
+  mcpHelperPath: string;
   applyStatus?: { proposalId: string; to: string };
   proposalId?: string;
 } {
@@ -308,6 +431,10 @@ function parseReleaseOpsArgs(argv: ReadonlyArray<string>): {
   let fixPrompt = false;
   let prDraft = false;
   let ciSummary = false;
+  let execute = false;
+  let writeReports = false;
+  let recoveryPlan = false;
+  let mcpHelperPath = 'mcp_aisp.py';
   let applyStatus = false;
   let proposalId: string | undefined;
   let to: string | undefined;
@@ -317,8 +444,19 @@ function parseReleaseOpsArgs(argv: ReadonlyArray<string>): {
     else if (arg === '--fix-prompt') fixPrompt = true;
     else if (arg === '--pr-draft') prDraft = true;
     else if (arg === '--ci-summary') ciSummary = true;
+    else if (arg === '--execute') execute = true;
+    else if (arg === '--write-reports') writeReports = true;
+    else if (arg === '--recovery-plan') recoveryPlan = true;
     else if (arg === 'apply-status') applyStatus = true;
-    else if (arg === '--to') {
+    else if (arg === '--mcp-helper') {
+      const next = argv[index + 1];
+      if (next) {
+        mcpHelperPath = next;
+        index++;
+      }
+    } else if (arg?.startsWith('--mcp-helper=')) {
+      mcpHelperPath = arg.slice('--mcp-helper='.length);
+    } else if (arg === '--to') {
       const next = argv[index + 1];
       if (next) {
         to = next;
@@ -341,6 +479,10 @@ function parseReleaseOpsArgs(argv: ReadonlyArray<string>): {
     fixPrompt,
     prDraft,
     ciSummary,
+    execute,
+    writeReports,
+    recoveryPlan,
+    mcpHelperPath,
     ...(applyStatus && proposalId && to ? { applyStatus: { proposalId, to } } : {}),
     ...(proposalId ? { proposalId } : {}),
   };

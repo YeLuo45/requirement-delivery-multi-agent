@@ -88,8 +88,12 @@ npm run cli -- release-ops --pr-draft
 npm run cli -- release-ops --json
 npm run cli -- release-ops --ci-summary
 
-# preview a safe proposal status transition without mutating MCP/storage
+# persist delivery-report.md, ci-evidence.md, and automation.json under release-local/
+npm run cli -- release-ops --write-reports
+
+# preview or recover safe proposal status transitions without skipping the MCP state machine
 npm run cli -- release-ops apply-status --proposal P-20260623-022 --to deployed --dry-run
+npm run cli -- release-ops --recovery-plan
 
 # CI-only release evidence workflow uploads artifacts/release-local
 # .github/workflows/release-ops-evidence.yml
@@ -118,9 +122,9 @@ After `npm run dev:web`, browser operators can use the Web mode for every TUI op
 | `config` | `/config` backed by `GET /api/config` |
 | `new` | `/proposals` backed by `POST /api/proposals/create` |
 | `control-plane` | `/control-plane` backed by `GET /api/control-plane/panel` |
-| `release-ops` | `/release-ops` backed by `GET /api/release-ops` and `GET /api/release-history` |
+| `release-ops` | `/release-ops` backed by `GET /api/release-ops`, `GET /api/release-ops/actions`, `GET /api/release-diff`, `GET /api/workflow-runs`, and `GET /api/release-history` |
 
-`GET /api/operator` returns the same parity map plus proposal totals for automated checks. `GET /api/acceptance-evidence` returns the same evidence dashboard model used by the home Overview. `GET /api/release-ops?format=automation` returns safe status suggestions, stage commands, PR draft markdown, and remediation markdown for CI or operator dashboards. The Overview also surfaces an acceptance-evidence panel that summarizes check, test, coverage, README verification, and build gates from accepted/deployed/delivered proposal notes.
+`GET /api/operator` returns the same parity map plus proposal totals for automated checks. `GET /api/acceptance-evidence` returns the same evidence dashboard model used by the home Overview. `GET /api/release-ops?format=automation` returns safe status suggestions, stage commands, PR draft markdown, and remediation markdown for CI or operator dashboards. `GET /api/release-ops/actions` returns copy-ready status/stage actions, `GET /api/release-diff` returns the artifact diff viewer model, and `GET /api/workflow-runs` returns a workflow status dashboard. The Overview also surfaces an acceptance-evidence panel that summarizes check, test, coverage, README verification, and build gates from accepted/deployed/delivered proposal notes.
 
 ## Repository layout
 

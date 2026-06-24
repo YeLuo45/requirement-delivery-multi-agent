@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
@@ -7,12 +7,15 @@ import { describe, it } from 'node:test';
 import {
   buildReleaseOpsPayload,
   renderReleaseOpsApplyStatusDryRun,
+  renderReleaseOpsApplyStatusExecutionPlan,
   renderReleaseOpsAutomationJson,
   renderReleaseOpsCiSummary,
   renderReleaseOpsFixPrompt,
   renderReleaseOpsPrDraft,
+  renderReleaseOpsRecoveryPlan,
   renderReleaseOpsStageCommands,
   renderReleaseOpsText,
+  writeReleaseOpsDeliveryReportFiles,
 } from '../src/release-ops.js';
 
 function seedReleaseOpsFixture(): string {
@@ -176,7 +179,7 @@ describe('release-ops CLI helpers', () => {
     try {
       const payload = await buildReleaseOpsPayload(root, {});
       const automation = renderReleaseOpsAutomationJson(payload);
-      assert.equal(automation.schemaVersion, 'release-ops.v1');
+      assert.equal(automation.schemaVersion, 'release-ops.v2');
       assert.equal(automation.prDraftMarkdown.startsWith('# Release Operations PR Draft'), true);
       assert.deepEqual(automation.stageCommands, [
         'git add -- packages/x/src/a.ts packages/x/test/a.test.ts docs/proposals/P-ops-prd.md PRJ-ops/P-ops.json',
@@ -198,7 +201,7 @@ describe('release-ops CLI helpers', () => {
 
       const summary = renderReleaseOpsCiSummary(payload);
       assert.match(summary, /^# RDMA Release Operations Summary/);
-      assert.match(summary, /Schema: release-ops.v1/);
+      assert.match(summary, /Schema: release-ops.v2/);
       assert.match(summary, /P-ops → test_failed/);
       assert.match(summary, /P-clean → deployed/);
       assert.match(summary, /git add -- packages\/x\/src\/a.ts/);
@@ -220,6 +223,83 @@ describe('release-ops CLI helpers', () => {
       const blocked = renderReleaseOpsApplyStatusDryRun(payload, 'P-clean', 'delivered');
       assert.match(blocked, /BLOCKED/);
       assert.match(blocked, /not a safe next status/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('renders explicit execute-mode MCP status apply commands for safe transitions only', async () => {
+    const root = seedReleaseOpsFixture();
+    try {
+      const payload = await buildReleaseOpsPayload(root, {});
+      const plan = renderReleaseOpsApplyStatusExecutionPlan(payload, 'P-clean', 'deployed', {
+        execute: true,
+        mcpHelperPath: '/tools/mcp_aisp.py',
+      });
+
+      assert.equal(plan.mode, 'execute');
+      assert.deepEqual(plan.commands, [
+        'python3 /tools/mcp_aisp.py update-proposal-status --proposal-id P-clean --status deployed',
+      ]);
+      assert.match(plan.text, /EXECUTE PLAN/);
+      assert.match(plan.text, /P-clean: accepted → deployed/);
+
+      const blocked = renderReleaseOpsApplyStatusExecutionPlan(payload, 'P-clean', 'delivered', {
+        execute: true,
+        mcpHelperPath: '/tools/mcp_aisp.py',
+      });
+      assert.equal(blocked.mode, 'blocked');
+      assert.deepEqual(blocked.commands, []);
+      assert.match(blocked.text, /BLOCKED/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes file-based delivery reports under release-local artifacts', async () => {
+    const root = seedReleaseOpsFixture();
+    try {
+      const payload = await buildReleaseOpsPayload(root, {});
+      const result = await writeReleaseOpsDeliveryReportFiles(root, payload, {
+        generatedAt: '2026-06-24T05:00:00.000Z',
+      });
+
+      assert.deepEqual(
+        result.files.map((file) => path.relative(root, file.path)),
+        [
+          'release-local/delivery-report.md',
+          'release-local/ci-evidence.md',
+          'release-local/automation.json',
+        ],
+      );
+      assert.match(result.files[0]?.content ?? '', /# Release Operations PR Draft/);
+      assert.match(result.files[1]?.content ?? '', /# CI Evidence Notes/);
+      assert.match(result.files[2]?.content ?? '', /"schemaVersion": "release-ops.v2"/);
+      assert.equal(existsSync(path.join(root, 'release-local', 'delivery-report.md')), true);
+      assert.match(
+        readFileSync(path.join(root, 'release-local', 'automation.json'), 'utf8'),
+        /"schemaVersion": "release-ops.v2"/,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('renders a proposal MCP recovery plan with current status and safe next hops', async () => {
+    const root = seedReleaseOpsFixture();
+    try {
+      const payload = await buildReleaseOpsPayload(root, {});
+      const recovery = renderReleaseOpsRecoveryPlan(payload, {
+        mcpHelperPath: '/tools/mcp_aisp.py',
+      });
+
+      assert.match(recovery, /^# Proposal MCP Recovery Plan/);
+      assert.match(recovery, /P-clean: accepted → deployed/);
+      assert.match(
+        recovery,
+        /python3 \/tools\/mcp_aisp\.py update-proposal-status --proposal-id P-clean --status deployed/,
+      );
+      assert.match(recovery, /P-ops: in_test_acceptance → test_failed/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -56,9 +56,12 @@ export {
   renderReleaseOpsFixPrompt,
   renderReleaseOpsPrDraft,
   renderReleaseOpsApplyStatusDryRun,
+  renderReleaseOpsApplyStatusExecutionPlan,
   renderReleaseOpsStageCommands,
   renderReleaseOpsAutomationJson,
   renderReleaseOpsCiSummary,
+  renderReleaseOpsRecoveryPlan,
+  writeReleaseOpsDeliveryReportFiles,
 } from './release-ops.js';
 
 // `cmdServe` and `startServe` are imported for the dispatch switch

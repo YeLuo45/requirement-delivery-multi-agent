@@ -2,13 +2,18 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  buildCiEvidenceNotesArtifact,
   buildDeliveryReportHistoryModel,
   buildDirtyFileOwnershipGuard,
   buildProposalDeliveryReport,
+  buildReadmeVerifierSandboxPlan,
   buildReleaseArtifactBrowser,
+  buildReleaseArtifactDiffViewer,
   buildReleaseHistoryRows,
   buildReleaseOperationsCenter,
+  buildReleaseOpsActionPanel,
   buildSafeStatusApplyPlan,
+  buildWorkflowRunStatusDashboard,
   renderReleaseRemediationMarkdown,
 } from '../src/delivery-history.js';
 
@@ -309,5 +314,128 @@ describe('delivery report history model', () => {
     assert.match(report, /- check: PASS — biome check/);
     assert.match(report, /packages\/rdma-web\/src\/App.tsx/);
     assert.match(report, /1\. Remote CI badge/);
+  });
+
+  it('builds a release ops action panel with copy-ready status and staging actions', () => {
+    const panel = buildReleaseOpsActionPanel({
+      safeStatusActions: [
+        {
+          proposalId: 'P-a',
+          currentStatus: 'accepted',
+          suggestedStatus: 'deployed',
+          reason: 'ok',
+          dryRunCommand: 'rdma release-ops apply-status --proposal P-a --to deployed --dry-run',
+        },
+      ],
+      stageCommands: ['git add -- packages/rdma-cli/src/release-ops.ts'],
+      artifactPaths: ['artifacts/release-local/P-a.json'],
+    });
+
+    assert.deepEqual(
+      panel.primaryActions.map((action) => `${action.label}:${action.copyText}`),
+      [
+        'Apply P-a → deployed:rdma release-ops apply-status --proposal P-a --to deployed --execute',
+        'Stage owned files:git add -- packages/rdma-cli/src/release-ops.ts',
+      ],
+    );
+    assert.equal(panel.artifactLinks[0]?.label, 'P-a.json');
+  });
+
+  it('builds CI evidence notes from gates, artifacts, and status suggestions', () => {
+    const notes = buildCiEvidenceNotesArtifact({
+      generatedAt: '2026-06-24T05:00:00.000Z',
+      failedGateCount: 0,
+      artifactPaths: ['artifacts/release-local/summary.md'],
+      statusSuggestions: [
+        {
+          proposalId: 'P-a',
+          currentStatus: 'in_test_acceptance',
+          suggestedStatus: 'accepted',
+          reason: 'release gates passed',
+        },
+      ],
+    });
+
+    assert.match(notes, /^# CI Evidence Notes/);
+    assert.match(notes, /Generated: 2026-06-24T05:00:00.000Z/);
+    assert.match(notes, /Failed gates: 0/);
+    assert.match(notes, /P-a: in_test_acceptance → accepted/);
+    assert.match(notes, /artifacts\/release-local\/summary.md/);
+  });
+
+  it('builds an artifact diff viewer model from dirty ownership deltas', () => {
+    const viewer = buildReleaseArtifactDiffViewer([
+      {
+        proposalId: 'P-a',
+        generatedAt: '2026-06-24T05:00:00.000Z',
+        historyPath: 'artifacts/release-local/P-a.json',
+        gateResults: [],
+        dirty: {
+          ordinaryDirty: ['packages/rdma-cli/src/release-ops.ts'],
+          readmeDemoJson: ['PRJ-a/P-a.json'],
+        },
+        ownership: {
+          proposalId: 'P-a',
+          sourceFiles: ['packages/rdma-cli/src/release-ops.ts'],
+          testFiles: ['packages/rdma-cli/test/release-ops.test.ts'],
+          docs: [],
+          generated: ['PRJ-a/P-a.json'],
+          other: [],
+        },
+      },
+    ]);
+
+    assert.equal(viewer.rows[0]?.proposalId, 'P-a');
+    assert.equal(viewer.rows[0]?.sourceCount, 1);
+    assert.equal(viewer.rows[0]?.generatedCount, 1);
+    assert.deepEqual(viewer.rows[0]?.previewPaths.slice(0, 2), [
+      'packages/rdma-cli/src/release-ops.ts',
+      'packages/rdma-cli/test/release-ops.test.ts',
+    ]);
+  });
+
+  it('plans README command verification in a non-mutating sandbox', () => {
+    const plan = buildReadmeVerifierSandboxPlan({
+      repoRoot: '/repo',
+      sandboxRoot: '/tmp/rdma-readme-verify',
+      commands: ['npm run bootstrap', 'npm run cli -- status'],
+    });
+
+    assert.equal(plan.mutatesOriginalWorkspace, false);
+    assert.deepEqual(plan.setupCommands, [
+      'mkdir -p /tmp/rdma-readme-verify',
+      'rsync -a --delete --exclude .git /repo/ /tmp/rdma-readme-verify/',
+    ]);
+    assert.deepEqual(plan.verificationCommands, [
+      'cd /tmp/rdma-readme-verify && npm run bootstrap',
+      'cd /tmp/rdma-readme-verify && npm run cli -- status',
+    ]);
+  });
+
+  it('builds a workflow run status dashboard model sorted by newest run', () => {
+    const dashboard = buildWorkflowRunStatusDashboard([
+      {
+        id: 1,
+        name: 'Release Local',
+        status: 'completed',
+        conclusion: 'success',
+        url: 'https://example.test/1',
+        updatedAt: '2026-06-24T04:00:00.000Z',
+      },
+      {
+        id: 2,
+        name: 'Pages',
+        status: 'in_progress',
+        conclusion: null,
+        url: 'https://example.test/2',
+        updatedAt: '2026-06-24T05:00:00.000Z',
+      },
+    ]);
+
+    assert.deepEqual(dashboard.summary, { total: 2, passing: 1, failing: 0, running: 1 });
+    assert.deepEqual(
+      dashboard.rows.map((row) => `${row.id}:${row.badge}`),
+      ['2:running', '1:passing'],
+    );
   });
 });

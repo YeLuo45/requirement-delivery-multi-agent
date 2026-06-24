@@ -108,6 +108,39 @@ export interface ProposalDeliveryReportInput {
   readonly nextDirections: ReadonlyArray<string>;
 }
 
+export interface ReleaseOpsActionPanelInput {
+  readonly safeStatusActions: ReadonlyArray<SafeStatusApplyAction>;
+  readonly stageCommands: ReadonlyArray<string>;
+  readonly artifactPaths: ReadonlyArray<string>;
+}
+
+export interface ReleaseOpsPanelAction {
+  readonly label: string;
+  readonly copyText: string;
+}
+
+export interface CiEvidenceNotesInput {
+  readonly generatedAt: string;
+  readonly failedGateCount: number;
+  readonly artifactPaths: ReadonlyArray<string>;
+  readonly statusSuggestions: ReadonlyArray<SafeStatusSuggestionInput>;
+}
+
+export interface ReadmeVerifierSandboxInput {
+  readonly repoRoot: string;
+  readonly sandboxRoot: string;
+  readonly commands: ReadonlyArray<string>;
+}
+
+export interface WorkflowRunStatusInput {
+  readonly id: number;
+  readonly name: string;
+  readonly status: string;
+  readonly conclusion: string | null;
+  readonly url: string;
+  readonly updatedAt: string;
+}
+
 const SAFE_NEXT: Record<string, ReadonlyArray<string>> = {
   intake: ['clarifying'],
   clarifying: ['prd_pending_confirmation'],
@@ -303,6 +336,136 @@ export function buildProposalDeliveryReport(input: ProposalDeliveryReportInput):
   lines.push('', '## Next Directions');
   input.nextDirections.forEach((direction, index) => lines.push(`${index + 1}. ${direction}`));
   return `${lines.join('\n')}\n`;
+}
+
+export function buildReleaseOpsActionPanel(input: ReleaseOpsActionPanelInput): {
+  readonly primaryActions: ReadonlyArray<ReleaseOpsPanelAction>;
+  readonly artifactLinks: ReadonlyArray<{ readonly label: string; readonly href: string }>;
+} {
+  const statusActions = input.safeStatusActions.map((action) => ({
+    label: `Apply ${action.proposalId} → ${action.suggestedStatus}`,
+    copyText: action.dryRunCommand.replace(/ --dry-run$/, ' --execute'),
+  }));
+  const stageActions = input.stageCommands.map((command) => ({
+    label: 'Stage owned files',
+    copyText: command,
+  }));
+  return {
+    primaryActions: [...statusActions, ...stageActions],
+    artifactLinks: input.artifactPaths.map((artifactPath) => ({
+      label: artifactPath.split('/').at(-1) ?? artifactPath,
+      href: artifactPath,
+    })),
+  };
+}
+
+export function buildCiEvidenceNotesArtifact(input: CiEvidenceNotesInput): string {
+  const lines = [
+    '# CI Evidence Notes',
+    '',
+    `Generated: ${input.generatedAt}`,
+    `Failed gates: ${input.failedGateCount}`,
+    '',
+    '## Safe Status Suggestions',
+  ];
+  if (input.statusSuggestions.length === 0) {
+    lines.push('- None');
+  } else {
+    for (const suggestion of input.statusSuggestions) {
+      lines.push(
+        `- ${suggestion.proposalId}: ${suggestion.currentStatus} → ${suggestion.suggestedStatus} — ${suggestion.reason}`,
+      );
+    }
+  }
+  lines.push('', '## Artifacts');
+  if (input.artifactPaths.length === 0) {
+    lines.push('- None');
+  } else {
+    for (const artifactPath of input.artifactPaths) lines.push(`- ${artifactPath}`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+export function buildReleaseArtifactDiffViewer(histories: ReadonlyArray<DeliveryHistoryRecord>): {
+  readonly rows: ReadonlyArray<{
+    readonly proposalId: string;
+    readonly generatedAt: string;
+    readonly sourceCount: number;
+    readonly testCount: number;
+    readonly docsCount: number;
+    readonly generatedCount: number;
+    readonly otherCount: number;
+    readonly previewPaths: ReadonlyArray<string>;
+  }>;
+} {
+  return {
+    rows: [...histories]
+      .sort((left, right) => right.generatedAt.localeCompare(left.generatedAt))
+      .map((history) => {
+        const ownership = history.ownership ?? inferOwnership(history.proposalId, history);
+        return {
+          proposalId: history.proposalId,
+          generatedAt: history.generatedAt,
+          sourceCount: ownership.sourceFiles.length,
+          testCount: ownership.testFiles.length,
+          docsCount: ownership.docs.length,
+          generatedCount: ownership.generated.length,
+          otherCount: ownership.other.length,
+          previewPaths: [
+            ...ownership.sourceFiles,
+            ...ownership.testFiles,
+            ...ownership.docs,
+            ...ownership.generated,
+            ...ownership.other,
+          ].slice(0, 8),
+        };
+      }),
+  };
+}
+
+export function buildReadmeVerifierSandboxPlan(input: ReadmeVerifierSandboxInput): {
+  readonly mutatesOriginalWorkspace: false;
+  readonly setupCommands: ReadonlyArray<string>;
+  readonly verificationCommands: ReadonlyArray<string>;
+} {
+  return {
+    mutatesOriginalWorkspace: false,
+    setupCommands: [
+      `mkdir -p ${input.sandboxRoot}`,
+      `rsync -a --delete --exclude .git ${input.repoRoot}/ ${input.sandboxRoot}/`,
+    ],
+    verificationCommands: input.commands.map((command) => `cd ${input.sandboxRoot} && ${command}`),
+  };
+}
+
+export function buildWorkflowRunStatusDashboard(runs: ReadonlyArray<WorkflowRunStatusInput>): {
+  readonly summary: {
+    readonly total: number;
+    readonly passing: number;
+    readonly failing: number;
+    readonly running: number;
+  };
+  readonly rows: ReadonlyArray<
+    WorkflowRunStatusInput & { readonly badge: 'passing' | 'failing' | 'running' }
+  >;
+} {
+  const rows = [...runs]
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .map((run) => ({ ...run, badge: workflowRunBadge(run) }));
+  return {
+    summary: {
+      total: rows.length,
+      passing: rows.filter((row) => row.badge === 'passing').length,
+      failing: rows.filter((row) => row.badge === 'failing').length,
+      running: rows.filter((row) => row.badge === 'running').length,
+    },
+    rows,
+  };
+}
+
+function workflowRunBadge(run: WorkflowRunStatusInput): 'passing' | 'failing' | 'running' {
+  if (run.status !== 'completed') return 'running';
+  return run.conclusion === 'success' ? 'passing' : 'failing';
 }
 
 function latestHistoriesByProposal(

@@ -105,9 +105,10 @@ Usage:
 
   rdma release-ops [--json] [--fix-prompt] [--pr-draft] [--ci-summary] [--proposal <id>]
       Summarize local release history, failed gates, commit manifests,
-      stable automation JSON, CI summaries, and copy-ready stage/status
-      suggestions. This command only prints suggestions; it never executes
-      git or mutates proposal state.
+      stable automation JSON, CI summaries, copy-ready stage/status
+      suggestions, write file-based delivery reports, and build explicit
+      MCP status apply plans. Status apply defaults to dry-run; pass
+      --execute to print the exact MCP command to run.
 
   rdma help
       This help.

@@ -19,7 +19,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const scriptPath = fileURLToPath(import.meta.url);
+const repoRoot = path.resolve(path.dirname(scriptPath), '..');
 
 const READMES = [path.join(repoRoot, 'README.md'), path.join(repoRoot, 'README.zh-CN.md')];
 
@@ -292,6 +293,17 @@ function buildIsolatedEnv(command, tmpRoots) {
   return env;
 }
 
+export function buildReadmeCommandSandboxPlan({ repoRoot, sandboxRoot, command }) {
+  return {
+    mutatesRepoRoot: false,
+    setupCommands: [
+      `mkdir -p ${sandboxRoot}`,
+      `rsync -a --delete --exclude .git ${repoRoot}/ ${sandboxRoot}/`,
+    ],
+    command: `cd ${sandboxRoot} && ${command}`,
+  };
+}
+
 async function main() {
   const tmpRoots = [];
   const allResults = [];
@@ -365,7 +377,9 @@ async function main() {
   console.log('\nAll README commands verified.');
 }
 
-main().catch((err) => {
-  console.error('verify-readme-commands failed:', err);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === scriptPath) {
+  main().catch((err) => {
+    console.error('verify-readme-commands failed:', err);
+    process.exit(1);
+  });
+}
