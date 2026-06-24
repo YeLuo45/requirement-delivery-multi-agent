@@ -72,6 +72,15 @@ npm run e2e
 npm test
 npm run coverage
 
+# run the complete local release gate and dirty-file classifier
+npm run release:local
+
+# emit machine-readable release evidence without running gates
+npm run release:local -- --json --proposal P-20260623-019 --title "V22-V24 ledger"
+
+# persist that JSON payload under artifacts/release-local/
+npm run release:local -- --json --proposal P-20260623-019 --title "V22-V24 ledger" --write-history
+
 # or run a single requirement manually
 npm run cli -- deliver "Build me a CLI that converts JSON to CSV" \
   --requirement "Convert a JSON array of objects to CSV."
@@ -84,6 +93,20 @@ npm run dev:server
 ```
 
 The CLI writes all proposals under `.rdma/` (local JSON + audit log). The web dashboard reads from the same directory.
+
+### Web operator mode
+
+After `npm run dev:web`, browser operators can use the Web mode for every TUI operation:
+
+| TUI capability | Web surface |
+|---|---|
+| `list` | `/operator` and `/proposals` |
+| `show <id>` | `/proposals/:id` |
+| `config` | `/config` backed by `GET /api/config` |
+| `new` | `/proposals` backed by `POST /api/proposals/create` |
+| `control-plane` | `/control-plane` backed by `GET /api/control-plane/panel` |
+
+`GET /api/operator` returns the same parity map plus proposal totals for automated checks. `GET /api/acceptance-evidence` returns the same evidence dashboard model used by the home Overview. The Overview also surfaces an acceptance-evidence panel that summarizes check, test, coverage, README verification, and build gates from accepted/deployed/delivered proposal notes.
 
 ## Repository layout
 

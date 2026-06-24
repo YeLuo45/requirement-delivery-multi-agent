@@ -6,6 +6,8 @@
 import { promises as fs, existsSync } from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
+import { buildAcceptanceEvidenceDashboard } from './acceptance-evidence.js';
+import { buildOperatorConsoleModel } from './operator-console.js';
 
 interface AuditEntry {
   id: string;
@@ -149,10 +151,26 @@ async function createLocalProposal(dataRoot: string, body: unknown) {
   return proposal;
 }
 
-async function listLocalProposals(
-  dataRoot: string,
-): Promise<Array<{ id: string; projectId: string; createdAt: string }>> {
-  const proposals: Array<{ id: string; projectId: string; createdAt: string }> = [];
+async function listLocalProposals(dataRoot: string): Promise<
+  Array<{
+    id: string;
+    projectId: string;
+    title: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+    notes?: string;
+  }>
+> {
+  const proposals: Array<{
+    id: string;
+    projectId: string;
+    title: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+    notes?: string;
+  }> = [];
   const projects = await fs.readdir(path.join(dataRoot, 'proposals')).catch(() => []);
   for (const pid of projects) {
     const dir = path.join(dataRoot, 'proposals', pid);
@@ -165,6 +183,23 @@ async function listLocalProposals(
   }
   proposals.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return proposals;
+}
+
+async function readReleaseHistoryRecords(
+  dataRoot: string,
+): Promise<Array<{ generatedAt: string }>> {
+  const historyRoot = path.join(dataRoot, 'release-local');
+  const files = await fs.readdir(historyRoot).catch(() => []);
+  const records: Array<{ generatedAt: string }> = [];
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    const content = await fs.readFile(path.join(historyRoot, file), 'utf8').catch(() => '');
+    if (!content) continue;
+    const record = JSON.parse(content) as { generatedAt?: string };
+    if (typeof record.generatedAt === 'string') records.push(record as { generatedAt: string });
+  }
+  records.sort((left, right) => right.generatedAt.localeCompare(left.generatedAt));
+  return records;
 }
 
 export function rdmaApiPlugin(dataRoot: string): Plugin {
@@ -193,15 +228,12 @@ export function rdmaApiPlugin(dataRoot: string): Plugin {
 
       server.middlewares.use('/api/control-plane/cost', async (req, res) => {
         try {
-          const { parseLedgerFromDisk, loadLedgerFromStorage, renderControlPlanePanel } =
+          const { parseLedgerFromStorage, loadLedgerFromStorage, renderControlPlanePanel } =
             await import('@rdma/delivery-control');
           const proposalId = req.url?.split('?')[0]?.split('/').pop();
-          const ledgerPath = proposalId
-            ? path.join(dataRoot, 'ledgers', `${proposalId}.ledger.json`)
-            : null;
           const snapshot =
-            ledgerPath && existsSync(ledgerPath)
-              ? loadLedgerFromStorage(parseLedgerFromDisk(ledgerPath))
+            proposalId && existsSync(path.join(dataRoot, 'ledgers', `${proposalId}.ledger.json`))
+              ? loadLedgerFromStorage(parseLedgerFromStorage(dataRoot, proposalId))
               : { proposalId: 'panel', maxUsd: 1, spentUsd: 0, remainingUsd: 1, records: [] };
           const text = renderControlPlanePanel({
             metrics: { counters: { rdma_cost_records: snapshot.records.length } },
@@ -249,6 +281,52 @@ export function rdmaApiPlugin(dataRoot: string): Plugin {
               },
             ],
           };
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(payload));
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+
+      server.middlewares.use('/api/acceptance-evidence', async (_req, res) => {
+        try {
+          const proposals = await listLocalProposals(dataRoot);
+          const payload = buildAcceptanceEvidenceDashboard(
+            proposals.map((proposal) => ({
+              id: proposal.id,
+              title: proposal.title,
+              status: proposal.status,
+              updatedAt: proposal.updatedAt,
+              ...(proposal.notes ? { notes: proposal.notes } : {}),
+            })),
+          );
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(payload));
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+
+      server.middlewares.use('/api/release-history', async (_req, res) => {
+        try {
+          const payload = await readReleaseHistoryRecords(dataRoot);
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(payload));
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+
+      server.middlewares.use('/api/operator', async (_req, res) => {
+        try {
+          const proposals = await listLocalProposals(dataRoot);
+          const payload = buildOperatorConsoleModel({ storageRoot: dataRoot, proposals });
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify(payload));
         } catch (err) {

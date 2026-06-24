@@ -3,6 +3,7 @@
  */
 
 import { useProposals } from '../App';
+import { buildAcceptanceEvidenceDashboard } from '../acceptance-evidence.js';
 
 interface ProposalSummary {
   id: string;
@@ -10,6 +11,8 @@ interface ProposalSummary {
   title: string;
   status: string;
   createdAt: string;
+  updatedAt?: string;
+  notes?: string;
 }
 
 const STAGE_ORDER = [
@@ -55,6 +58,15 @@ export function Overview() {
 
   const delivered = counts.delivered ?? 0;
   const inFlight = proposals.length - delivered;
+  const evidenceDashboard = buildAcceptanceEvidenceDashboard(
+    (proposals as ProposalSummary[]).map((proposal) => ({
+      id: proposal.id,
+      title: proposal.title,
+      status: proposal.status,
+      updatedAt: proposal.updatedAt ?? proposal.createdAt,
+      notes: proposal.notes,
+    })),
+  );
 
   return (
     <div>
@@ -79,6 +91,77 @@ export function Overview() {
           <div className="label">Stages tracked</div>
           <div className="value">{STAGE_ORDER.length}</div>
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Acceptance evidence</h2>
+        <div className="grid" style={{ marginBottom: 16 }}>
+          <div className="stat">
+            <div className="label">Evidence proposals</div>
+            <div className="value">{evidenceDashboard.summary.evidenceProposals}</div>
+          </div>
+          <div className="stat">
+            <div className="label">Gate pass rate</div>
+            <div
+              className="value"
+              style={{
+                color: evidenceDashboard.summary.failedGates ? 'var(--red)' : 'var(--green)',
+              }}
+            >
+              {evidenceDashboard.summary.passRate}%
+            </div>
+          </div>
+          <div className="stat">
+            <div className="label">Passed gates</div>
+            <div className="value">{evidenceDashboard.summary.passedGates}</div>
+          </div>
+          <div className="stat">
+            <div className="label">Failed gates</div>
+            <div
+              className="value"
+              style={{ color: evidenceDashboard.summary.failedGates ? 'var(--red)' : 'var(--fg)' }}
+            >
+              {evidenceDashboard.summary.failedGates}
+            </div>
+          </div>
+        </div>
+        {evidenceDashboard.rows.length === 0 ? (
+          <p style={{ color: 'var(--fg-muted)' }}>
+            No acceptance evidence yet. Complete a delivery with check, test, coverage, README
+            verification, and build notes to populate this panel.
+          </p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Proposal</th>
+                <th>Title</th>
+                <th>Evidence</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {evidenceDashboard.rows.slice(0, 5).map((row) => (
+                <tr key={row.proposalId}>
+                  <td>
+                    <a href={`/proposals/${row.proposalId}`}>{row.proposalId}</a>
+                  </td>
+                  <td>{row.title}</td>
+                  <td>
+                    <span
+                      className={`status-badge status-${row.state === 'green' ? 'accepted' : 'test_failed'}`}
+                    >
+                      {row.summary}
+                    </span>
+                  </td>
+                  <td style={{ color: 'var(--fg-muted)' }}>
+                    {new Date(row.updatedAt).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div className="card">

@@ -103,4 +103,30 @@ describe('rdma-web control plane', () => {
     assert.match(payload.collaboration, /Collaboration/);
     assert.equal(typeof payload.cost, 'object');
   });
+
+  it('registers a /api/operator handler that returns TUI parity metadata', async () => {
+    const handlers: Array<{ path: string; fn: (req: unknown, res: unknown) => unknown }> = [];
+    const fakeServer = {
+      middlewares: {
+        use(path: string, fn: (req: unknown, res: unknown) => void) {
+          handlers.push({ path, fn });
+        },
+      },
+    };
+    const pluginApi = plugin as unknown as {
+      configureServer: (s: unknown) => void;
+    };
+    pluginApi.configureServer(fakeServer);
+
+    const target = handlers.find((handler) => handler.path === '/api/operator');
+    assert.ok(target, 'expected /api/operator handler');
+
+    const res = await dispatch(target.fn, '/api/operator');
+    const payload = JSON.parse(res.body);
+    assert.equal(payload.totalProposals, 1);
+    assert.deepEqual(
+      payload.capabilities.map((capability: { tuiCommand: string }) => capability.tuiCommand),
+      ['list', 'show <id>', 'config', 'new', 'control-plane'],
+    );
+  });
 });

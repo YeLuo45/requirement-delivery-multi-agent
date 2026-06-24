@@ -490,6 +490,11 @@ requirement-delivery-multi-agent/
 - `rdma sandbox apply --workspace-root <path> --proposal <id> --files <path>=<content> [--dry-run]`：从 CLI 应用或预览 sandbox 补丁。
 - `rdma metrics --cost` 输出成本 Prometheus 指标；`rdma tui --control-plane`（或在 TUI 内输入 `[p]lane`）打印面板摘要。
 - Web 面板 `GET /api/control-plane/panel` 与 `GET /api/control-plane/cost`：分别返回四个方向 JSON 与 Prometheus 文本。
+- Web 面板 `GET /api/acceptance-evidence`：返回与首页 Overview 相同的验收证据模型。
+- Web 首页 Overview 直接展示验收证据面板：从 accepted/deployed/delivered 提案 notes 中汇总 `check`、`npm test`、`coverage`、`verify:readme`、`build` 五个硬门禁。
+- `npm run release:local`：本地串行执行 check/test/coverage/verify:readme/build，并把 README demo JSON 副作用与普通脏文件分开报告。
+- `npm run release:local -- --json --proposal P-20260623-019 --title "V22-V24 ledger"`：只输出机器可读 release evidence JSON，不执行五个 gate。
+- `npm run release:local -- --json --proposal P-20260623-019 --title "V22-V24 ledger" --write-history`：把同一 JSON payload 写入 `artifacts/release-local/<timestamp>.json`，用于本地验收历史 ledger。
 
 这些 API 都是本地纯 TypeScript 逻辑，不执行 shell，不访问外网。
 

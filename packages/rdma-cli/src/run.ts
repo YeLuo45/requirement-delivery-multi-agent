@@ -11,6 +11,11 @@ import {
   Storage,
   type StorageDriver,
 } from '@rdma/core';
+import {
+  createBudgetLedger,
+  loadLedgerFromStorage,
+  parseLedgerFromStorage,
+} from '@rdma/delivery-control';
 import { createDesignerAgent } from '@rdma/designer';
 import { createDevAgent } from '@rdma/dev';
 import { EventBus } from '@rdma/persistence';
@@ -24,7 +29,7 @@ import { createResearchAgent } from '@rdma/research';
  * command logic can be reused by the MCP server (which exposes the
  * same operations as tools).
  */
-import { buildAgentProvider } from './agent-provider.js';
+import { buildAgentProvider, buildAgentProviderWithLedger } from './agent-provider.js';
 import { cmdConfigInit, cmdConfigPath, cmdConfigShow, cmdConfigValidate } from './config-cmd.js';
 import { buildArtifactPatch, cmdDiff, diffInspectData, lineDiff, unifiedDiff } from './diff.js';
 import { buildEventsData, buildInspectData, cmdEvents, cmdInspect } from './inspect.js';
@@ -129,7 +134,7 @@ export async function createStorage(
 
 export async function buildDeps(
   storageRoot: string = STORAGE_ROOT,
-  opts: { useLlm?: boolean; storage?: 'json' | 'sqlite' } = {},
+  opts: { useLlm?: boolean; storage?: 'json' | 'sqlite'; proposalId?: string } = {},
 ): Promise<BuildDeps> {
   const storage = await createStorage(storageRoot, opts.storage ?? 'json');
   const audit = new AuditLog(storage);
@@ -150,21 +155,10 @@ export async function buildDeps(
     // Both branches fall back to mock when nothing usable is configured.
     const configRoot = path.dirname(storageRoot);
     const agentConfigs = await loadAgentConfig({ root: configRoot });
-    const pmModel = await buildAgentProvider(
-      { env: process.env },
-      'pm',
-      agentConfigs.pm?.llm ?? null,
-    );
-    const devModel = await buildAgentProvider(
-      { env: process.env },
-      'dev',
-      agentConfigs.dev?.llm ?? null,
-    );
-    const qaModel = await buildAgentProvider(
-      { env: process.env },
-      'qa',
-      agentConfigs.qa?.llm ?? null,
-    );
+    const providerBuilder = createRuntimeProviderBuilder(storageRoot, opts.proposalId);
+    const pmModel = await providerBuilder('pm', agentConfigs.pm?.llm ?? null);
+    const devModel = await providerBuilder('dev', agentConfigs.dev?.llm ?? null);
+    const qaModel = await providerBuilder('qa', agentConfigs.qa?.llm ?? null);
 
     // If per-agent config was silent, still try the legacy env-var trick
     // so a `--use-llm` with no YAML on disk keeps working.
@@ -180,9 +174,9 @@ export async function buildDeps(
         : null;
 
     const effectivePm = pmModel.name === 'mock' && legacyModel ? legacyModel : pmModel;
-    registry.register(createPmAgent({ model: effectivePm }));
-    registry.register(createDevAgent({ model: devModel }));
-    registry.register(createQaAgent({ model: qaModel }));
+    registry.replace(createPmAgent({ model: effectivePm }));
+    registry.replace(createDevAgent({ model: devModel }));
+    registry.replace(createQaAgent({ model: qaModel }));
     logLlmSummary(agentConfigs, { pm: effectivePm, dev: devModel, qa: qaModel });
   } else {
     registry.register(createQaAgent());
@@ -197,6 +191,29 @@ interface AgentProviderSnapshot {
   pm: import('@rdma/llm').LlmProvider;
   dev: import('@rdma/llm').LlmProvider;
   qa: import('@rdma/llm').LlmProvider;
+}
+
+function createRuntimeProviderBuilder(storageRoot: string, proposalId?: string) {
+  const ledger = proposalId ? loadRuntimeLedger(storageRoot, proposalId) : null;
+  return async (agentId: string, config: AgentRuntimeConfig['llm'] | null) => {
+    if (!ledger) {
+      return buildAgentProvider({ env: process.env }, agentId, config ?? null);
+    }
+    return buildAgentProviderWithLedger({ env: process.env }, agentId, config ?? null, ledger);
+  };
+}
+
+function loadRuntimeLedger(storageRoot: string, proposalId: string) {
+  try {
+    const snapshot = loadLedgerFromStorage(parseLedgerFromStorage(storageRoot, proposalId));
+    const ledger = createBudgetLedger({ proposalId: snapshot.proposalId, maxUsd: snapshot.maxUsd });
+    for (const record of snapshot.records) {
+      ledger.record(record);
+    }
+    return ledger;
+  } catch {
+    return createBudgetLedger({ proposalId, maxUsd: 1 });
+  }
 }
 
 function logLlmSummary(
@@ -267,15 +284,16 @@ export async function cmdDeliver(argv: string[]): Promise<void> {
   const scope = typeof flags.scope === 'string' ? flags.scope : undefined;
   const useLlm = flags['use-llm'] === true;
   const storage = resolveStorageBackend(flags);
+  const proposalId = typeof flags.proposal === 'string' ? flags.proposal : undefined;
 
   if (!title || !requirement) {
     console.error(
-      'Usage: rdma deliver <title> --requirement "<text>" [--url <src>] [--use-llm] [--storage json|sqlite]',
+      'Usage: rdma deliver <title> --requirement "<text>" [--url <src>] [--use-llm] [--proposal <id>] [--storage json|sqlite]',
     );
     process.exit(1);
   }
 
-  const { pipeline } = await buildDeps(STORAGE_ROOT, { useLlm, storage });
+  const { pipeline } = await buildDeps(STORAGE_ROOT, { useLlm, storage, proposalId });
   const tags: Record<string, string> = {};
   if (priority) tags.priority = priority;
   if (scope) tags.scope = scope;

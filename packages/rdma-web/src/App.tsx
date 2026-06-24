@@ -19,10 +19,36 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
+import { ControlPlanePanel } from './components/ControlPlanePanel.js';
+import { Config } from './pages/Config.js';
+import { DeliveryReport } from './pages/DeliveryReport.js';
+import { Operator } from './pages/Operator.js';
 import { Overview } from './pages/Overview.js';
 import { ProposalDetail } from './pages/ProposalDetail.js';
 import { Proposals } from './pages/Proposals.js';
+import { ReleaseHistory } from './pages/ReleaseHistory.js';
 import { defaultRealtimeUrl, useRealtime } from './use-realtime.js';
+
+export const appNavItems = [
+  { href: '/', label: 'Overview' },
+  { href: '/operator', label: 'Operator' },
+  { href: '/proposals', label: 'Proposals' },
+  { href: '/delivery-report/P-20260623-015', label: 'Delivery Report' },
+  { href: '/release-history', label: 'Release History' },
+  { href: '/config', label: 'Config' },
+  { href: '/control-plane', label: 'Control Plane' },
+] as const;
+
+export const appRoutes = [
+  { path: '/', label: 'Overview' },
+  { path: '/operator', label: 'Operator' },
+  { path: '/proposals', label: 'Proposals' },
+  { path: '/proposals/:id', label: 'Proposal Detail' },
+  { path: '/delivery-report/:id', label: 'Delivery Report' },
+  { path: '/release-history', label: 'Release History' },
+  { path: '/config', label: 'Config' },
+  { path: '/control-plane', label: 'Control Plane' },
+] as const;
 
 export function App() {
   return (
@@ -32,16 +58,24 @@ export function App() {
           ⚡ RDMA
         </Link>
         <nav>
-          <Link to="/">Overview</Link>
-          <Link to="/proposals">Proposals</Link>
+          {appNavItems.map((item) => (
+            <Link key={item.href} to={item.href}>
+              {item.label}
+            </Link>
+          ))}
         </nav>
         <RealtimeIndicator />
       </header>
       <main>
         <Routes>
           <Route path="/" element={<Overview />} />
+          <Route path="/operator" element={<Operator />} />
           <Route path="/proposals" element={<Proposals />} />
           <Route path="/proposals/:id" element={<ProposalDetail />} />
+          <Route path="/delivery-report/:id" element={<DeliveryReport />} />
+          <Route path="/release-history" element={<ReleaseHistory />} />
+          <Route path="/config" element={<Config />} />
+          <Route path="/control-plane" element={<ControlPlanePanel />} />
         </Routes>
       </main>
       <footer className="app-footer">
@@ -149,4 +183,26 @@ export function useProposalDetail(id: string | undefined) {
   useRealtime({ url: defaultRealtimeUrl(), onEvent: onRealtimeEvent });
 
   return { data, source, error };
+}
+
+export function useReleaseHistory() {
+  const [histories, setHistories] = useState<unknown[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    void reloadKey;
+    fetch('/api/release-history')
+      .then((res) => {
+        if (!res.ok) throw new Error(`release history failed: ${res.status}`);
+        return res.json() as Promise<unknown[]>;
+      })
+      .then(setHistories)
+      .catch((err) => setError(String(err)));
+  }, [reloadKey]);
+
+  const onRealtimeEvent = useCallback(() => setReloadKey((k) => k + 1), []);
+  useRealtime({ url: defaultRealtimeUrl(), onEvent: onRealtimeEvent });
+
+  return { histories, error, reload: onRealtimeEvent };
 }

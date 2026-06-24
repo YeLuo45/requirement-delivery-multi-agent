@@ -24,7 +24,8 @@
     "e2e": "node --test --import tsx scripts/e2e-hello-world.test.ts",
     "bootstrap": "node --import tsx scripts/bootstrap-demo.mjs",
     "seed:demo": "node scripts/seed-demo-data.mjs",
-    "regen:demo": "node scripts/regenerate-demo-data.mjs"
+    "regen:demo": "node scripts/regenerate-demo-data.mjs",
+    "release:local": "node scripts/release-local.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

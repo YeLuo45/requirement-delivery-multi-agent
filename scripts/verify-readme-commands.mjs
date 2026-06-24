@@ -113,6 +113,7 @@ function isStubOnly(command) {
   if (/\bnpm\s+run\s+e2e\b/.test(command)) return true;
   if (/\bnpm\s+run\s+coverage\b/.test(command)) return true;
   if (/\bnpm\s+run\s+verify:readme\b/.test(command)) return true;
+  if (/\bnpm\s+run\s+release:local\b/.test(command)) return true;
   if (/\bnpm\s+run\s+doctor\b/.test(command)) return true;
   if (/\bnpm\s+run\s+smoke:serve\b/.test(command)) return true;
   // scripts/bump-version.mjs is invoked from the release workflow
@@ -276,6 +277,21 @@ function tail(text, lines = 8) {
   return text.split('\n').slice(-lines).join('\n');
 }
 
+function buildIsolatedEnv(command, tmpRoots) {
+  const env = {};
+  if (/\bRDMA_STORAGE_ROOT\b/.test(command) || /\bnpm\s+run\s+cli\b/.test(command)) {
+    const dir = mkdtempSync(path.join(tmpdir(), 'rdma-verify-storage-'));
+    tmpRoots.push(dir);
+    env.RDMA_STORAGE_ROOT = dir;
+  }
+  if (/\bRDMA_SHIPPED_ROOT\b/.test(command)) {
+    const dir = mkdtempSync(path.join(tmpdir(), 'rdma-verify-shipped-'));
+    tmpRoots.push(dir);
+    env.RDMA_SHIPPED_ROOT = dir;
+  }
+  return env;
+}
+
 async function main() {
   const tmpRoots = [];
   const allResults = [];
@@ -289,17 +305,7 @@ async function main() {
       const kind = classify(command);
       if (kind === 'empty' || kind === 'cd') continue;
 
-      const env = {};
-      if (/RDMA_STORAGE_ROOT/.test(command)) {
-        const dir = mkdtempSync(path.join(tmpdir(), 'rdma-verify-'));
-        tmpRoots.push(dir);
-        env.RDMA_STORAGE_ROOT = dir;
-      }
-      if (/RDMA_SHIPPED_ROOT/.test(command)) {
-        const dir = mkdtempSync(path.join(tmpdir(), 'rdma-verify-shipped-'));
-        tmpRoots.push(dir);
-        env.RDMA_SHIPPED_ROOT = dir;
-      }
+      const env = buildIsolatedEnv(command, tmpRoots);
       if (isStubOnly(command)) {
         allResults.push({
           readme: path.basename(readme),

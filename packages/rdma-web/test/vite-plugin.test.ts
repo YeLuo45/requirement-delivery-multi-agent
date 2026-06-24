@@ -141,6 +141,8 @@ function findHandler(plugin, rootOverride) {
         else if (route === '/api/proposals/') this._detail = handler;
         else if (route === '/api/proposals/create') this._create = handler;
         else if (route === '/api/config') this._config = handler;
+        else if (route === '/api/acceptance-evidence') this._acceptanceEvidence = handler;
+        else if (route === '/api/release-history') this._releaseHistory = handler;
       },
     },
   };
@@ -150,6 +152,8 @@ function findHandler(plugin, rootOverride) {
     detail: fakeServer.middlewares._detail,
     create: fakeServer.middlewares._create,
     config: fakeServer.middlewares._config,
+    acceptanceEvidence: fakeServer.middlewares._acceptanceEvidence,
+    releaseHistory: fakeServer.middlewares._releaseHistory,
   };
 }
 
@@ -291,6 +295,58 @@ describe('rdma-web vite plugin', () => {
       const proposals = JSON.parse(listRes.body);
       assert.equal(proposals.length, 1);
       assert.equal(proposals[0].id, created.id);
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+
+  it('GET /api/acceptance-evidence returns the shared evidence dashboard model', async () => {
+    const mod = await loadPlugin();
+    const { acceptanceEvidence } = findHandler(mod);
+    assert.equal(typeof acceptanceEvidence, 'function');
+    const req = fakeRequest('/api/acceptance-evidence');
+    const res = newResponse();
+    await acceptanceEvidence(req, res, () => undefined);
+    assert.equal(res.statusCode, 200);
+    const body = JSON.parse(res.body);
+    assert.equal(body.summary.totalProposals, 1);
+    assert.equal(Array.isArray(body.rows), true);
+  });
+
+  it('GET /api/release-history returns persisted release-local JSON records newest first', async () => {
+    const fresh = mkdtempSync(path.join(tmpdir(), 'rdma-web-release-history-'));
+    try {
+      const historyRoot = path.join(fresh, 'release-local');
+      mkdirSync(historyRoot, { recursive: true });
+      writeFileSync(
+        path.join(historyRoot, 'old.json'),
+        JSON.stringify({
+          proposalId: 'P-old',
+          generatedAt: '2026-06-23T10:00:00.000Z',
+          historyPath: 'old.json',
+          dirty: { readmeDemoJson: [], ordinaryDirty: [] },
+        }),
+      );
+      writeFileSync(
+        path.join(historyRoot, 'new.json'),
+        JSON.stringify({
+          proposalId: 'P-new',
+          generatedAt: '2026-06-23T12:00:00.000Z',
+          historyPath: 'new.json',
+          dirty: { readmeDemoJson: [], ordinaryDirty: [] },
+        }),
+      );
+      const mod = await loadPlugin();
+      const { releaseHistory } = findHandler(mod, fresh);
+      assert.equal(typeof releaseHistory, 'function');
+      const req = fakeRequest('/api/release-history');
+      const res = newResponse();
+      await releaseHistory(req, res, () => undefined);
+      assert.equal(res.statusCode, 200);
+      assert.deepEqual(
+        JSON.parse(res.body).map((record) => record.proposalId),
+        ['P-new', 'P-old'],
+      );
     } finally {
       rmSync(fresh, { recursive: true, force: true });
     }

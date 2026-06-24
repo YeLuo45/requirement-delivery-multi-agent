@@ -875,6 +875,14 @@ export function parseLedgerFromDisk(filePath: string): LedgerSnapshot {
   return parseLedgerFromSnapshot(text);
 }
 
+export function ledgerPathFromStorage(storageRoot: string, proposalId: string): string {
+  return path.join(storageRoot, 'ledgers', `${proposalId}.ledger.json`);
+}
+
+export function parseLedgerFromStorage(storageRoot: string, proposalId: string): LedgerSnapshot {
+  return parseLedgerFromDisk(ledgerPathFromStorage(storageRoot, proposalId));
+}
+
 export interface AgentProviderBuilderInput {
   readonly agentId: string;
   readonly baseConfig: {
@@ -1053,9 +1061,16 @@ export function formatPrDraft(input: PrDraftInput): PrDraft {
       gitCheck = null;
     }
   }
+  const gitCheckLines = gitCheck
+    ? [
+        `Git apply check: ${gitCheck.ok ? 'passed' : 'failed'} (git apply --check)`,
+        gitCheck.stdout.trim() ? `Git stdout:\n${gitCheck.stdout.trim()}` : '',
+        gitCheck.stderr.trim() ? `Git stderr:\n${gitCheck.stderr.trim()}` : '',
+      ].filter(Boolean)
+    : ['Git apply check: not run'];
   return {
     title: `[rdma] ${input.title} (${input.proposalId})`,
-    body: `${input.body}\n\nProposal: ${input.proposalId}\n\nPatch source: rdma sandbox apply --dry-run --pr-draft\nFiles: ${validated.recognizedFiles.join(', ') || '(none)'}\n`,
+    body: `${input.body}\n\nProposal: ${input.proposalId}\n\nPatch source: rdma sandbox apply --dry-run --pr-draft\nFiles: ${validated.recognizedFiles.join(', ') || '(none)'}\n${gitCheckLines.join('\n')}\n`,
     patchText,
     validated,
     gitCheck,
