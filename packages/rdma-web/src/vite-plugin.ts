@@ -6,6 +6,10 @@
 import { promises as fs, existsSync } from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
+import {
+  buildReleaseOpsPayload,
+  renderReleaseOpsAutomationJson,
+} from '../../rdma-cli/src/release-ops.js';
 import { buildAcceptanceEvidenceDashboard } from './acceptance-evidence.js';
 import { buildOperatorConsoleModel } from './operator-console.js';
 
@@ -316,6 +320,25 @@ export function rdmaApiPlugin(dataRoot: string): Plugin {
           const payload = await readReleaseHistoryRecords(dataRoot);
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify(payload));
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+
+      server.middlewares.use('/api/release-ops', async (req, res) => {
+        try {
+          const query = new URL(req.url ?? '/api/release-ops', 'http://127.0.0.1').searchParams;
+          const proposalId = query.get('proposal') ?? undefined;
+          const format = query.get('format') ?? undefined;
+          const payload = await buildReleaseOpsPayload(dataRoot, proposalId ? { proposalId } : {});
+          res.setHeader('Content-Type', 'application/json');
+          res.end(
+            JSON.stringify(
+              format === 'automation' ? renderReleaseOpsAutomationJson(payload) : payload,
+            ),
+          );
         } catch (err) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');

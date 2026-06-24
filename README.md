@@ -81,6 +81,19 @@ npm run release:local -- --json --proposal P-20260623-019 --title "V22-V24 ledge
 # persist that JSON payload under artifacts/release-local/
 npm run release:local -- --json --proposal P-20260623-019 --title "V22-V24 ledger" --write-history
 
+# summarize release history and generate copy-ready PR text/stage suggestions
+npm run cli -- release-ops --pr-draft
+
+# emit stable automation JSON and GitHub Actions step-summary markdown
+npm run cli -- release-ops --json
+npm run cli -- release-ops --ci-summary
+
+# preview a safe proposal status transition without mutating MCP/storage
+npm run cli -- release-ops apply-status --proposal P-20260623-022 --to deployed --dry-run
+
+# CI-only release evidence workflow uploads artifacts/release-local
+# .github/workflows/release-ops-evidence.yml
+
 # or run a single requirement manually
 npm run cli -- deliver "Build me a CLI that converts JSON to CSV" \
   --requirement "Convert a JSON array of objects to CSV."
@@ -105,8 +118,9 @@ After `npm run dev:web`, browser operators can use the Web mode for every TUI op
 | `config` | `/config` backed by `GET /api/config` |
 | `new` | `/proposals` backed by `POST /api/proposals/create` |
 | `control-plane` | `/control-plane` backed by `GET /api/control-plane/panel` |
+| `release-ops` | `/release-ops` backed by `GET /api/release-ops` and `GET /api/release-history` |
 
-`GET /api/operator` returns the same parity map plus proposal totals for automated checks. `GET /api/acceptance-evidence` returns the same evidence dashboard model used by the home Overview. The Overview also surfaces an acceptance-evidence panel that summarizes check, test, coverage, README verification, and build gates from accepted/deployed/delivered proposal notes.
+`GET /api/operator` returns the same parity map plus proposal totals for automated checks. `GET /api/acceptance-evidence` returns the same evidence dashboard model used by the home Overview. `GET /api/release-ops?format=automation` returns safe status suggestions, stage commands, PR draft markdown, and remediation markdown for CI or operator dashboards. The Overview also surfaces an acceptance-evidence panel that summarizes check, test, coverage, README verification, and build gates from accepted/deployed/delivered proposal notes.
 
 ## Repository layout
 

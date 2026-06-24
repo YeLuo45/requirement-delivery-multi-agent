@@ -130,6 +130,7 @@ describe('rdma cli entry point', () => {
       'diff',
       'replay',
       'metrics',
+      'release-ops',
       'tui',
       'config',
     ];

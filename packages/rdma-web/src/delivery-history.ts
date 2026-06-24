@@ -62,6 +62,52 @@ export interface ReleaseOperationsCenter {
   readonly remediationMarkdown: string;
 }
 
+export interface ReleaseArtifactBrowserItem {
+  readonly proposalId: string;
+  readonly generatedAt: string;
+  readonly artifacts: {
+    readonly releaseJson: string;
+    readonly summaryMarkdown: string;
+    readonly commitManifestJson: string;
+    readonly diffJson: string;
+  };
+  readonly gateSummary: string;
+  readonly dirtySummary: string;
+}
+
+export interface SafeStatusSuggestionInput {
+  readonly proposalId: string;
+  readonly currentStatus: string;
+  readonly suggestedStatus: string;
+  readonly reason: string;
+}
+
+export interface SafeStatusApplyAction extends SafeStatusSuggestionInput {
+  readonly dryRunCommand: string;
+}
+
+export interface SafeStatusApplyBlocked extends SafeStatusSuggestionInput {
+  readonly reason: string;
+}
+
+export interface DirtyFileOwnershipGuard {
+  readonly safeStageCommands: ReadonlyArray<string>;
+  readonly generatedReviewFiles: ReadonlyArray<string>;
+  readonly manualReviewFiles: ReadonlyArray<string>;
+}
+
+export interface ProposalDeliveryReportInput {
+  readonly proposalId: string;
+  readonly title: string;
+  readonly gates: ReadonlyArray<{
+    readonly label: string;
+    readonly status: 'pass' | 'fail';
+    readonly detail: string;
+  }>;
+  readonly changedFiles: ReadonlyArray<string>;
+  readonly nextDirections: ReadonlyArray<string>;
+}
+
 const SAFE_NEXT: Record<string, ReadonlyArray<string>> = {
   intake: ['clarifying'],
   clarifying: ['prd_pending_confirmation'],
@@ -165,6 +211,98 @@ export function renderReleaseRemediationMarkdown(
       '',
     ]),
   ].join('\n')}\n`;
+}
+
+export function buildReleaseArtifactBrowser(histories: ReadonlyArray<DeliveryHistoryRecord>): {
+  readonly items: ReadonlyArray<ReleaseArtifactBrowserItem>;
+} {
+  return {
+    items: [...histories]
+      .sort((left, right) => right.generatedAt.localeCompare(left.generatedAt))
+      .map((history) => {
+        const gateResults = history.gateResults ?? [];
+        const passed = gateResults.filter((gate) => gate.status === 'pass').length;
+        const failed = gateResults.filter((gate) => gate.status === 'fail').length;
+        const dir = history.historyPath.replace(/\/[^/]*$/, '');
+        return {
+          proposalId: history.proposalId,
+          generatedAt: history.generatedAt,
+          artifacts: {
+            releaseJson: history.historyPath,
+            summaryMarkdown: `${dir}/summary.md`,
+            commitManifestJson: `${dir}/commit-manifest.json`,
+            diffJson: `${dir}/diff.json`,
+          },
+          gateSummary: `${passed} passed / ${failed} failed`,
+          dirtySummary: `${history.dirty.ordinaryDirty.length} ordinary / ${history.dirty.readmeDemoJson.length} generated`,
+        };
+      }),
+  };
+}
+
+export function buildSafeStatusApplyPlan(suggestions: ReadonlyArray<SafeStatusSuggestionInput>): {
+  readonly safe: ReadonlyArray<SafeStatusApplyAction>;
+  readonly blocked: ReadonlyArray<SafeStatusApplyBlocked>;
+} {
+  const safe: SafeStatusApplyAction[] = [];
+  const blocked: SafeStatusApplyBlocked[] = [];
+  for (const suggestion of suggestions) {
+    const allowed = SAFE_NEXT[suggestion.currentStatus] ?? [];
+    if (allowed.includes(suggestion.suggestedStatus)) {
+      safe.push({
+        ...suggestion,
+        dryRunCommand: `rdma release-ops apply-status --proposal ${suggestion.proposalId} --to ${suggestion.suggestedStatus} --dry-run`,
+      });
+    } else {
+      blocked.push({
+        ...suggestion,
+        reason: `${suggestion.suggestedStatus} is not a safe next status from ${suggestion.currentStatus}`,
+      });
+    }
+  }
+  return { safe, blocked };
+}
+
+export function buildDirtyFileOwnershipGuard(
+  manifests: ReadonlyArray<CommitManifestSummary>,
+): DirtyFileOwnershipGuard {
+  const safeStageCommands: string[] = [];
+  const generatedReviewFiles: string[] = [];
+  const manualReviewFiles: string[] = [];
+  for (const manifest of manifests) {
+    const safeFiles = manifest.recommendedStagePaths.filter(
+      (file) =>
+        file.startsWith('packages/') || file.startsWith('README') || file.startsWith('docs/'),
+    );
+    const generated = manifest.recommendedStagePaths.filter(
+      (file) => /^PRJ-[^/]+\//.test(file) || file.startsWith('PRJ/'),
+    );
+    const manual = manifest.recommendedStagePaths.filter(
+      (file) => !safeFiles.includes(file) && !generated.includes(file),
+    );
+    if (safeFiles.length > 0) safeStageCommands.push(`git add -- ${safeFiles.join(' ')}`);
+    generatedReviewFiles.push(...generated);
+    manualReviewFiles.push(...manual);
+  }
+  return { safeStageCommands, generatedReviewFiles, manualReviewFiles };
+}
+
+export function buildProposalDeliveryReport(input: ProposalDeliveryReportInput): string {
+  const lines = [
+    `# Delivery Report — ${input.proposalId}`,
+    '',
+    `Title: ${input.title}`,
+    '',
+    '## Gates',
+  ];
+  for (const gate of input.gates) {
+    lines.push(`- ${gate.label}: ${gate.status.toUpperCase()} — ${gate.detail}`);
+  }
+  lines.push('', '## Changed Files');
+  for (const file of input.changedFiles) lines.push(`- ${file}`);
+  lines.push('', '## Next Directions');
+  input.nextDirections.forEach((direction, index) => lines.push(`${index + 1}. ${direction}`));
+  return `${lines.join('\n')}\n`;
 }
 
 function latestHistoriesByProposal(

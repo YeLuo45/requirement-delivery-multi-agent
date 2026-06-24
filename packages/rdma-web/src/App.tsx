@@ -27,6 +27,7 @@ import { Overview } from './pages/Overview.js';
 import { ProposalDetail } from './pages/ProposalDetail.js';
 import { Proposals } from './pages/Proposals.js';
 import { ReleaseHistory } from './pages/ReleaseHistory.js';
+import { ReleaseOps } from './pages/ReleaseOps.js';
 import { defaultRealtimeUrl, useRealtime } from './use-realtime.js';
 
 export const appNavItems = [
@@ -35,6 +36,7 @@ export const appNavItems = [
   { href: '/proposals', label: 'Proposals' },
   { href: '/delivery-report/P-20260623-015', label: 'Delivery Report' },
   { href: '/release-history', label: 'Release History' },
+  { href: '/release-ops', label: 'Release Ops' },
   { href: '/config', label: 'Config' },
   { href: '/control-plane', label: 'Control Plane' },
 ] as const;
@@ -46,6 +48,7 @@ export const appRoutes = [
   { path: '/proposals/:id', label: 'Proposal Detail' },
   { path: '/delivery-report/:id', label: 'Delivery Report' },
   { path: '/release-history', label: 'Release History' },
+  { path: '/release-ops', label: 'Release Ops' },
   { path: '/config', label: 'Config' },
   { path: '/control-plane', label: 'Control Plane' },
 ] as const;
@@ -74,6 +77,7 @@ export function App() {
           <Route path="/proposals/:id" element={<ProposalDetail />} />
           <Route path="/delivery-report/:id" element={<DeliveryReport />} />
           <Route path="/release-history" element={<ReleaseHistory />} />
+          <Route path="/release-ops" element={<ReleaseOps />} />
           <Route path="/config" element={<Config />} />
           <Route path="/control-plane" element={<ControlPlanePanel />} />
         </Routes>

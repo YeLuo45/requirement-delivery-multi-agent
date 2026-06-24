@@ -3,8 +3,12 @@ import { describe, it } from 'node:test';
 
 import {
   buildDeliveryReportHistoryModel,
+  buildDirtyFileOwnershipGuard,
+  buildProposalDeliveryReport,
+  buildReleaseArtifactBrowser,
   buildReleaseHistoryRows,
   buildReleaseOperationsCenter,
+  buildSafeStatusApplyPlan,
   renderReleaseRemediationMarkdown,
 } from '../src/delivery-history.js';
 
@@ -204,5 +208,106 @@ describe('delivery report history model', () => {
     assert.match(markdown, /## P-new — New release/);
     assert.match(markdown, /Gate: build/);
     assert.match(markdown, /- Fix bundler error\./);
+  });
+
+  it('builds a release artifact browser grouped by proposal', () => {
+    const browser = buildReleaseArtifactBrowser([
+      {
+        proposalId: 'P-new',
+        generatedAt: '2026-06-24T02:00:00.000Z',
+        historyPath: 'artifacts/release-local/new.json',
+        gateResults: [
+          { label: 'check', status: 'pass', exitCode: 0, durationMs: 1, checklist: [] },
+        ],
+        dirty: { readmeDemoJson: [], ordinaryDirty: [] },
+      },
+      {
+        proposalId: 'P-old',
+        generatedAt: '2026-06-24T01:00:00.000Z',
+        historyPath: 'artifacts/release-local/old.json',
+        gateResults: [
+          { label: 'build', status: 'fail', exitCode: 1, durationMs: 2, checklist: [] },
+        ],
+        dirty: { readmeDemoJson: ['PRJ/P.json'], ordinaryDirty: ['README.md'] },
+      },
+    ]);
+
+    assert.deepEqual(
+      browser.items.map((item) => `${item.proposalId}:${item.artifacts.releaseJson}`),
+      ['P-new:artifacts/release-local/new.json', 'P-old:artifacts/release-local/old.json'],
+    );
+    assert.equal(browser.items[0]?.gateSummary, '1 passed / 0 failed');
+    assert.equal(browser.items[1]?.dirtySummary, '1 ordinary / 1 generated');
+  });
+
+  it('plans only safe status apply actions and keeps dry-run commands explicit', () => {
+    const plan = buildSafeStatusApplyPlan([
+      {
+        proposalId: 'P-a',
+        currentStatus: 'in_test_acceptance',
+        suggestedStatus: 'accepted',
+        reason: 'ok',
+      },
+      {
+        proposalId: 'P-b',
+        currentStatus: 'accepted',
+        suggestedStatus: 'delivered',
+        reason: 'bad skip',
+      },
+    ]);
+
+    assert.deepEqual(
+      plan.safe.map((item) => item.proposalId),
+      ['P-a'],
+    );
+    assert.deepEqual(
+      plan.blocked.map((item) => item.proposalId),
+      ['P-b'],
+    );
+    assert.equal(
+      plan.safe[0]?.dryRunCommand,
+      'rdma release-ops apply-status --proposal P-a --to accepted --dry-run',
+    );
+    assert.match(plan.blocked[0]?.reason ?? '', /not a safe next status/);
+  });
+
+  it('separates ordinary work from README verifier side effects for commit safety', () => {
+    const guard = buildDirtyFileOwnershipGuard([
+      {
+        proposalId: 'P-new',
+        counts: { sourceFiles: 1, testFiles: 1, docs: 1, generated: 1, other: 1 },
+        recommendedStagePaths: [
+          'packages/rdma-web/src/new.ts',
+          'packages/rdma-web/test/new.test.ts',
+          'README.md',
+          'PRJ/P.json',
+          'package-lock.json',
+        ],
+      },
+    ]);
+
+    assert.deepEqual(guard.safeStageCommands, [
+      'git add -- packages/rdma-web/src/new.ts packages/rdma-web/test/new.test.ts README.md',
+    ]);
+    assert.deepEqual(guard.generatedReviewFiles, ['PRJ/P.json']);
+    assert.deepEqual(guard.manualReviewFiles, ['package-lock.json']);
+  });
+
+  it('builds a proposal delivery report with acceptance evidence and next directions', () => {
+    const report = buildProposalDeliveryReport({
+      proposalId: 'P-20260624-017',
+      title: 'Release ops automation',
+      gates: [
+        { label: 'check', status: 'pass', detail: 'biome check' },
+        { label: 'test', status: 'pass', detail: '439/439' },
+      ],
+      changedFiles: ['packages/rdma-cli/src/release-ops.ts', 'packages/rdma-web/src/App.tsx'],
+      nextDirections: ['Remote CI badge', 'MCP status apply'],
+    });
+
+    assert.match(report, /^# Delivery Report — P-20260624-017/);
+    assert.match(report, /- check: PASS — biome check/);
+    assert.match(report, /packages\/rdma-web\/src\/App.tsx/);
+    assert.match(report, /1\. Remote CI badge/);
   });
 });

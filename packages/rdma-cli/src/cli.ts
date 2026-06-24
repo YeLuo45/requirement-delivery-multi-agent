@@ -14,6 +14,7 @@
  *   rdma config show|validate|init|path                     per-agent configuration
  *   rdma inspect <proposal-id>                               show proposal handoff + audit timeline
  *   rdma events [--proposal <id>] [--limit N] [--since-seq M] stream audit-derived events
+ *   rdma release-ops [--json|--fix-prompt|--pr-draft|--ci-summary] summarize release history
  *   rdma help                                                this help
  */
 
@@ -102,6 +103,12 @@ Usage:
   rdma events [--proposal <id>] [--limit N] [--since-seq M]
       Stream audit-derived events; omit --proposal to list across all proposals.
 
+  rdma release-ops [--json] [--fix-prompt] [--pr-draft] [--ci-summary] [--proposal <id>]
+      Summarize local release history, failed gates, commit manifests,
+      stable automation JSON, CI summaries, and copy-ready stage/status
+      suggestions. This command only prints suggestions; it never executes
+      git or mutates proposal state.
+
   rdma help
       This help.
 
@@ -140,6 +147,7 @@ export async function main(
     case 'diff':
     case 'replay':
     case 'metrics':
+    case 'release-ops':
     case 'tui':
     case 'config':
     case 'sandbox':

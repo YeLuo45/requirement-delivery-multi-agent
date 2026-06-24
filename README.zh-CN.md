@@ -156,6 +156,12 @@ npm run cli -- metrics
 npm run cli -- metrics --no-run --format prom
 npm run cli -- metrics --no-run --format json
 npm run cli -- metrics --walk
+
+# 发布验收自动化：失败 gate、PR draft、CI summary、状态推进 dry-run
+npm run cli -- release-ops --pr-draft
+npm run cli -- release-ops --json
+npm run cli -- release-ops --ci-summary
+npm run cli -- release-ops apply-status --proposal P-20260623-022 --to deployed --dry-run
 ```
 
 ### 5. 跑示例
@@ -495,6 +501,9 @@ requirement-delivery-multi-agent/
 - `npm run release:local`：本地串行执行 check/test/coverage/verify:readme/build，并把 README demo JSON 副作用与普通脏文件分开报告。
 - `npm run release:local -- --json --proposal P-20260623-019 --title "V22-V24 ledger"`：只输出机器可读 release evidence JSON，不执行五个 gate。
 - `npm run release:local -- --json --proposal P-20260623-019 --title "V22-V24 ledger" --write-history`：把同一 JSON payload 写入 `artifacts/release-local/<timestamp>.json`，用于本地验收历史 ledger。
+- `npm run cli -- release-ops --pr-draft`：汇总最新 release history、失败 gate、commit manifest，并生成可复制的 PR 文本与 `git add -- <path>` 暂存建议；命令只打印建议，不执行 git。
+- `npm run cli -- release-ops --json`：输出稳定 `release-ops.v1` 自动化 JSON，包含 `stageCommands`、`statusSuggestions`、`prDraftMarkdown`。
+- `npm run cli -- release-ops --ci-summary`：输出 GitHub Actions step summary 友好的交付闭环摘要，只建议安全下一状态，不修改提案。
 
 这些 API 都是本地纯 TypeScript 逻辑，不执行 shell，不访问外网。
 

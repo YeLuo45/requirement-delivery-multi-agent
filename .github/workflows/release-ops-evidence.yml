@@ -1,0 +1,35 @@
+name: Release Ops Evidence
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'packages/**'
+      - 'scripts/**'
+      - 'README.md'
+      - 'README.zh-CN.md'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/release-ops-evidence.yml'
+
+jobs:
+  release-ops-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm test
+      - run: npm run coverage
+      - run: npm run verify:readme
+      - run: npm run build
+      - run: npm run release:local -- --json --ci --history-root artifacts/release-local
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-ops-evidence
+          path: artifacts/release-local

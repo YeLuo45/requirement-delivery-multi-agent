@@ -29,4 +29,11 @@ describe('App route discoverability', () => {
     assert.ok(appNavItems.some((item) => item.href === '/release-history'));
     assert.ok(appRoutes.some((route) => route.path === '/release-history'));
   });
+
+  it('exposes release operations as a top-level operator route', () => {
+    assert.ok(
+      appNavItems.some((item) => item.href === '/release-ops' && item.label === 'Release Ops'),
+    );
+    assert.ok(appRoutes.some((route) => route.path === '/release-ops'));
+  });
 });

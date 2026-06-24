@@ -34,6 +34,7 @@ import { cmdConfigInit, cmdConfigPath, cmdConfigShow, cmdConfigValidate } from '
 import { buildArtifactPatch, cmdDiff, diffInspectData, lineDiff, unifiedDiff } from './diff.js';
 import { buildEventsData, buildInspectData, cmdEvents, cmdInspect } from './inspect.js';
 import { cmdMetrics, parseMetricsArgs, renderMetricsText } from './metrics.js';
+import { cmdReleaseOps } from './release-ops.js';
 import { cmdReplay, replayProposal } from './replay.js';
 import { cmdSandboxApply } from './sandbox-cmd.js';
 import { cmdServe, startServe } from './serve.js';
@@ -49,6 +50,16 @@ export {
 } from './diff.js';
 export { cmdInspect, cmdEvents, buildInspectData, buildEventsData } from './inspect.js';
 export { parseMetricsArgs, renderMetricsText } from './metrics.js';
+export {
+  buildReleaseOpsPayload,
+  renderReleaseOpsText,
+  renderReleaseOpsFixPrompt,
+  renderReleaseOpsPrDraft,
+  renderReleaseOpsApplyStatusDryRun,
+  renderReleaseOpsStageCommands,
+  renderReleaseOpsAutomationJson,
+  renderReleaseOpsCiSummary,
+} from './release-ops.js';
 
 // `cmdServe` and `startServe` are imported for the dispatch switch
 // and for tests that exercise them through `runFn`. The other names
@@ -491,6 +502,8 @@ export async function run(command: string, argv: string[]): Promise<void> {
       return cmdReplay(argv);
     case 'metrics':
       return cmdMetrics(argv);
+    case 'release-ops':
+      return cmdReleaseOps(argv, STORAGE_ROOT);
     case 'tui':
       return cmdTui(argv);
     case 'sandbox': {

@@ -143,6 +143,7 @@ function findHandler(plugin, rootOverride) {
         else if (route === '/api/config') this._config = handler;
         else if (route === '/api/acceptance-evidence') this._acceptanceEvidence = handler;
         else if (route === '/api/release-history') this._releaseHistory = handler;
+        else if (route === '/api/release-ops') this._releaseOps = handler;
       },
     },
   };
@@ -154,6 +155,7 @@ function findHandler(plugin, rootOverride) {
     config: fakeServer.middlewares._config,
     acceptanceEvidence: fakeServer.middlewares._acceptanceEvidence,
     releaseHistory: fakeServer.middlewares._releaseHistory,
+    releaseOps: fakeServer.middlewares._releaseOps,
   };
 }
 
@@ -347,6 +349,60 @@ describe('rdma-web vite plugin', () => {
         JSON.parse(res.body).map((record) => record.proposalId),
         ['P-new', 'P-old'],
       );
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+
+  it('GET /api/release-ops returns failed gates and supports proposal filtering', async () => {
+    const fresh = mkdtempSync(path.join(tmpdir(), 'rdma-web-release-ops-'));
+    try {
+      const proposalRoot = path.join(fresh, 'proposals', 'PRJ-ops');
+      const historyRoot = path.join(fresh, 'release-local');
+      mkdirSync(proposalRoot, { recursive: true });
+      mkdirSync(historyRoot, { recursive: true });
+      writeFileSync(
+        path.join(proposalRoot, 'P-ops.json'),
+        JSON.stringify({
+          id: 'P-ops',
+          projectId: 'PRJ-ops',
+          title: 'Release ops',
+          status: 'in_test_acceptance',
+          createdAt: '2026-06-24T00:00:00.000Z',
+          updatedAt: '2026-06-24T00:00:00.000Z',
+          artifacts: [],
+          tags: {},
+        }),
+      );
+      writeFileSync(
+        path.join(historyRoot, 'ops.json'),
+        JSON.stringify({
+          proposalId: 'P-ops',
+          generatedAt: '2026-06-24T03:00:00.000Z',
+          historyPath: 'artifacts/release-local/ops.json',
+          gateResults: [
+            {
+              label: 'build',
+              status: 'fail',
+              exitCode: 1,
+              durationMs: 20,
+              checklist: ['Fix build.'],
+            },
+          ],
+          dirty: { readmeDemoJson: [], ordinaryDirty: ['packages/x/src/a.ts'] },
+        }),
+      );
+      const mod = await loadPlugin();
+      const { releaseOps } = findHandler(mod, fresh);
+      assert.equal(typeof releaseOps, 'function');
+      const req = fakeRequest('/api/release-ops?proposal=P-ops');
+      const res = newResponse();
+      await releaseOps(req, res, () => undefined);
+      assert.equal(res.statusCode, 200);
+      const payload = JSON.parse(res.body);
+      assert.equal(payload.failedGateQueue[0].proposalId, 'P-ops');
+      assert.equal(payload.failedGateQueue[0].gateLabel, 'build');
+      assert.match(payload.remediationMarkdown, /Fix build/);
     } finally {
       rmSync(fresh, { recursive: true, force: true });
     }
