@@ -157,11 +157,11 @@ npm run cli -- metrics --no-run --format prom
 npm run cli -- metrics --no-run --format json
 npm run cli -- metrics --walk
 
-# 发布验收自动化：失败 gate、PR draft、CI summary、状态推进 dry-run / recovery plan
+# 发布验收自动化：失败 gate、PR draft、CI summary、artifact hub、状态推进 dry-run / recovery plan
 npm run cli -- release-ops --pr-draft
 npm run cli -- release-ops --json
 npm run cli -- release-ops --ci-summary
-npm run cli -- release-ops --write-reports
+npm run cli -- release-ops --write-reports  # 产出 delivery-report / ci-evidence / automation / index / proposal-health / diff / replay
 npm run cli -- release-ops apply-status --proposal P-20260623-022 --to deployed --dry-run
 npm run cli -- release-ops --recovery-plan
 ```

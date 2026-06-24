@@ -88,7 +88,8 @@ npm run cli -- release-ops --pr-draft
 npm run cli -- release-ops --json
 npm run cli -- release-ops --ci-summary
 
-# persist delivery-report.md, ci-evidence.md, and automation.json under release-local/
+# persist delivery-report.md, ci-evidence.md, automation.json, index.json,
+# proposal-health.json, diff.json, and replay.md under release-local/
 npm run cli -- release-ops --write-reports
 
 # preview or recover safe proposal status transitions without skipping the MCP state machine

@@ -141,6 +141,46 @@ export interface WorkflowRunStatusInput {
   readonly updatedAt: string;
 }
 
+export interface ProposalHealthDoctorInput {
+  readonly proposals: ReadonlyArray<DeliveryHistoryProposal>;
+  readonly histories: ReadonlyArray<DeliveryHistoryRecord>;
+  readonly pushedCommitSubjects: ReadonlyArray<string>;
+}
+
+export interface ProposalHealthIssue {
+  readonly proposalId: string;
+  readonly kind: 'missing-release-history' | 'not-deployed' | 'commit-not-pushed';
+  readonly severity: 'warning';
+  readonly detail: string;
+}
+
+export interface ReleaseArtifactHubInput {
+  readonly generatedAt: string;
+  readonly histories: ReadonlyArray<DeliveryHistoryRecord>;
+  readonly workflowRunsPath: string;
+  readonly healthPath: string;
+}
+
+export interface OperatorExecutionConsoleInput {
+  readonly proposalId: string;
+  readonly currentStatus: string;
+  readonly safeStatusActions: ReadonlyArray<SafeStatusApplyAction>;
+  readonly blockedStatusActions: ReadonlyArray<SafeStatusApplyBlocked>;
+  readonly workflowSummary: ReturnType<typeof buildWorkflowRunStatusDashboard>['summary'];
+}
+
+export interface ReleaseReplayTimelineInput {
+  readonly proposal: DeliveryHistoryProposal;
+  readonly histories: ReadonlyArray<DeliveryHistoryRecord>;
+  readonly commits: ReadonlyArray<{ readonly sha: string; readonly subject: string }>;
+}
+
+export interface StaleProposalRecoveryInput {
+  readonly staleProposals: ReadonlyArray<DeliveryHistoryProposal>;
+  readonly supersedingProposalId: string;
+  readonly mcpHelperPath: string;
+}
+
 const SAFE_NEXT: Record<string, ReadonlyArray<string>> = {
   intake: ['clarifying'],
   clarifying: ['prd_pending_confirmation'],
@@ -428,14 +468,193 @@ export function buildReadmeVerifierSandboxPlan(input: ReadmeVerifierSandboxInput
   readonly setupCommands: ReadonlyArray<string>;
   readonly verificationCommands: ReadonlyArray<string>;
 } {
+  const envPrefix = [
+    `RDMA_STORAGE_ROOT=${input.sandboxRoot}/.rdma/data`,
+    `RDMA_SHIPPED_ROOT=${input.sandboxRoot}/.rdma/shipped`,
+    `RDMA_CONFIG_ROOT=${input.sandboxRoot}/.rdma/config`,
+  ].join(' ');
   return {
     mutatesOriginalWorkspace: false,
     setupCommands: [
       `mkdir -p ${input.sandboxRoot}`,
       `rsync -a --delete --exclude .git ${input.repoRoot}/ ${input.sandboxRoot}/`,
     ],
-    verificationCommands: input.commands.map((command) => `cd ${input.sandboxRoot} && ${command}`),
+    verificationCommands: input.commands.map(
+      (command) => `cd ${input.sandboxRoot} && ${envPrefix} ${command}`,
+    ),
   };
+}
+
+export function buildProposalHealthDoctor(input: ProposalHealthDoctorInput): {
+  readonly summary: { readonly total: number; readonly healthy: number; readonly warnings: number };
+  readonly issues: ReadonlyArray<ProposalHealthIssue>;
+  readonly fixPlanMarkdown: string;
+} {
+  const latestByProposal = latestHistoriesByProposal(input.histories);
+  const issues: ProposalHealthIssue[] = [];
+  for (const proposal of input.proposals) {
+    const latest = latestByProposal.get(proposal.id);
+    if (!latest && proposal.status !== 'delivered') {
+      issues.push({
+        proposalId: proposal.id,
+        kind: 'missing-release-history',
+        severity: 'warning',
+        detail: `${proposal.id} has no release-local history evidence`,
+      });
+      continue;
+    }
+    if (latest && proposal.status === 'accepted') {
+      issues.push({
+        proposalId: proposal.id,
+        kind: 'not-deployed',
+        severity: 'warning',
+        detail: `${proposal.id} has gate evidence but is not deployed`,
+      });
+      continue;
+    }
+    if (
+      latest &&
+      proposal.status === 'delivered' &&
+      !input.pushedCommitSubjects.some((subject) => subject.includes(proposal.id))
+    ) {
+      issues.push({
+        proposalId: proposal.id,
+        kind: 'commit-not-pushed',
+        severity: 'warning',
+        detail: `${proposal.id} is delivered but no pushed commit subject references it`,
+      });
+    }
+  }
+  const lines = ['# Proposal Health Doctor', ''];
+  if (issues.length === 0) {
+    lines.push('No proposal health issues detected.');
+  } else {
+    for (const issue of issues) {
+      lines.push(`- ${issue.proposalId}: ${issue.kind} — ${issue.detail}`);
+    }
+  }
+  return {
+    summary: {
+      total: input.proposals.length,
+      healthy: input.proposals.length - issues.length,
+      warnings: issues.length,
+    },
+    issues,
+    fixPlanMarkdown: `${lines.join('\n')}\n`,
+  };
+}
+
+export function buildReleaseArtifactHub(input: ReleaseArtifactHubInput): {
+  readonly index: {
+    readonly schemaVersion: 'release-artifact-hub.v1';
+    readonly generatedAt: string;
+    readonly files: ReadonlyArray<{ readonly kind: string; readonly path: string }>;
+    readonly proposals: ReadonlyArray<{
+      readonly proposalId: string;
+      readonly historyPath: string;
+    }>;
+  };
+  readonly downloadActions: ReadonlyArray<{ readonly label: string; readonly copyText: string }>;
+} {
+  const files = [
+    { kind: 'delivery-report', path: 'release-local/delivery-report.md' },
+    { kind: 'ci-evidence', path: 'release-local/ci-evidence.md' },
+    { kind: 'automation-json', path: 'release-local/automation.json' },
+    { kind: 'diff-json', path: 'release-local/diff.json' },
+    { kind: 'workflow-runs', path: input.workflowRunsPath },
+    { kind: 'proposal-health', path: input.healthPath },
+  ];
+  return {
+    index: {
+      schemaVersion: 'release-artifact-hub.v1',
+      generatedAt: input.generatedAt,
+      files,
+      proposals: input.histories.map((history) => ({
+        proposalId: history.proposalId,
+        historyPath: history.historyPath,
+      })),
+    },
+    downloadActions: files.map((file) => ({ label: file.kind, copyText: file.path })),
+  };
+}
+
+export function buildOperatorExecutionConsole(input: OperatorExecutionConsoleInput): {
+  readonly header: string;
+  readonly primaryButtons: ReadonlyArray<{
+    readonly label: string;
+    readonly dryRunText: string;
+    readonly executeText: string;
+  }>;
+  readonly blockedReasons: ReadonlyArray<string>;
+  readonly workflowSummary: OperatorExecutionConsoleInput['workflowSummary'];
+} {
+  return {
+    header: `${input.proposalId} ${input.currentStatus}`,
+    primaryButtons: input.safeStatusActions.map((action) => ({
+      label: `Execute ${action.suggestedStatus}`,
+      dryRunText: action.dryRunCommand,
+      executeText: action.dryRunCommand.replace(/ --dry-run$/, ' --execute'),
+    })),
+    blockedReasons: input.blockedStatusActions.map((action) => action.reason),
+    workflowSummary: input.workflowSummary,
+  };
+}
+
+export function buildReleaseReplayTimeline(input: ReleaseReplayTimelineInput): {
+  readonly events: ReadonlyArray<{
+    readonly kind: 'proposal' | 'gate' | 'commit' | 'status';
+    readonly text: string;
+  }>;
+  readonly markdown: string;
+} {
+  const events: Array<{ kind: 'proposal' | 'gate' | 'commit' | 'status'; text: string }> = [
+    { kind: 'proposal', text: `${input.proposal.id}: ${input.proposal.title}` },
+  ];
+  const latest = latestHistoriesByProposal(input.histories).get(input.proposal.id);
+  const gate = latest?.gateResults?.[0];
+  if (gate) events.push({ kind: 'gate', text: `${gate.label}: ${gate.status}` });
+  const commit = input.commits.find((item) => item.subject.includes(input.proposal.id));
+  if (commit) events.push({ kind: 'commit', text: `${commit.sha} ${commit.subject}` });
+  events.push({ kind: 'status', text: `MCP status: ${input.proposal.status}` });
+  return {
+    events,
+    markdown: `${['# Release Replay Timeline', '', ...events.map((event) => `- ${event.kind}: ${event.text}`)].join('\n')}\n`,
+  };
+}
+
+export function buildStaleProposalRecoveryPlan(input: StaleProposalRecoveryInput): {
+  readonly actions: ReadonlyArray<{
+    readonly proposalId: string;
+    readonly mode: 'safe-next' | 'blocked';
+    readonly nextStatus?: string;
+    readonly command?: string;
+    readonly reason: string;
+  }>;
+  readonly markdown: string;
+} {
+  const actions = input.staleProposals.map((proposal) => {
+    const nextStatus = SAFE_NEXT[proposal.status]?.[0];
+    if (!nextStatus || proposal.status === 'intake') {
+      return {
+        proposalId: proposal.id,
+        mode: 'blocked' as const,
+        reason: `${proposal.id} cannot be safely auto-advanced; superseded by ${input.supersedingProposalId}`,
+      };
+    }
+    return {
+      proposalId: proposal.id,
+      mode: 'safe-next' as const,
+      nextStatus,
+      command: `python3 ${input.mcpHelperPath} update-proposal-status --proposal-id ${proposal.id} --status ${nextStatus}`,
+      reason: `${proposal.id} appears stale and superseded by ${input.supersedingProposalId}`,
+    };
+  });
+  const lines = ['# Stale Proposal Recovery Plan', ''];
+  for (const action of actions) {
+    lines.push(`- ${action.proposalId}: ${action.reason}`);
+    if (action.command) lines.push(`  - Command: ${action.command}`);
+  }
+  return { actions, markdown: `${lines.join('\n')}\n` };
 }
 
 export function buildWorkflowRunStatusDashboard(runs: ReadonlyArray<WorkflowRunStatusInput>): {

@@ -5,14 +5,19 @@ import {
   buildCiEvidenceNotesArtifact,
   buildDeliveryReportHistoryModel,
   buildDirtyFileOwnershipGuard,
+  buildOperatorExecutionConsole,
   buildProposalDeliveryReport,
+  buildProposalHealthDoctor,
   buildReadmeVerifierSandboxPlan,
   buildReleaseArtifactBrowser,
   buildReleaseArtifactDiffViewer,
+  buildReleaseArtifactHub,
   buildReleaseHistoryRows,
   buildReleaseOperationsCenter,
   buildReleaseOpsActionPanel,
+  buildReleaseReplayTimeline,
   buildSafeStatusApplyPlan,
+  buildStaleProposalRecoveryPlan,
   buildWorkflowRunStatusDashboard,
   renderReleaseRemediationMarkdown,
 } from '../src/delivery-history.js';
@@ -406,10 +411,13 @@ describe('delivery report history model', () => {
       'mkdir -p /tmp/rdma-readme-verify',
       'rsync -a --delete --exclude .git /repo/ /tmp/rdma-readme-verify/',
     ]);
-    assert.deepEqual(plan.verificationCommands, [
-      'cd /tmp/rdma-readme-verify && npm run bootstrap',
-      'cd /tmp/rdma-readme-verify && npm run cli -- status',
-    ]);
+    assert.equal(plan.verificationCommands.length, 2);
+    assert.match(
+      plan.verificationCommands[0] ?? '',
+      /RDMA_STORAGE_ROOT=\/tmp\/rdma-readme-verify\/\.rdma\/data/,
+    );
+    assert.match(plan.verificationCommands[0] ?? '', /npm run bootstrap/);
+    assert.match(plan.verificationCommands[1] ?? '', /npm run cli -- status/);
   });
 
   it('builds a workflow run status dashboard model sorted by newest run', () => {
@@ -436,6 +444,179 @@ describe('delivery report history model', () => {
     assert.deepEqual(
       dashboard.rows.map((row) => `${row.id}:${row.badge}`),
       ['2:running', '1:passing'],
+    );
+  });
+
+  it('builds a proposal health doctor from proposals, histories, and pushed commits', () => {
+    const doctor = buildProposalHealthDoctor({
+      proposals: [
+        { id: 'P-ok', title: 'Delivered', status: 'delivered' },
+        { id: 'P-stuck', title: 'Stuck', status: 'in_dev' },
+        { id: 'P-accepted', title: 'Accepted', status: 'accepted' },
+      ],
+      histories: [
+        {
+          proposalId: 'P-ok',
+          generatedAt: '2026-06-24T05:00:00.000Z',
+          historyPath: 'release-local/P-ok.json',
+          gateResults: [
+            { label: 'check', status: 'pass', exitCode: 0, durationMs: 1, checklist: [] },
+          ],
+          dirty: { ordinaryDirty: [], readmeDemoJson: [] },
+        },
+        {
+          proposalId: 'P-accepted',
+          generatedAt: '2026-06-24T06:00:00.000Z',
+          historyPath: 'release-local/P-accepted.json',
+          gateResults: [
+            { label: 'build', status: 'pass', exitCode: 0, durationMs: 1, checklist: [] },
+          ],
+          dirty: { ordinaryDirty: [], readmeDemoJson: [] },
+        },
+      ],
+      pushedCommitSubjects: ['feat: deliver P-ok'],
+    });
+
+    assert.deepEqual(doctor.summary, { total: 3, healthy: 1, warnings: 2 });
+    assert.deepEqual(
+      doctor.issues.map((issue) => `${issue.proposalId}:${issue.kind}`),
+      ['P-stuck:missing-release-history', 'P-accepted:not-deployed'],
+    );
+    assert.match(doctor.fixPlanMarkdown, /P-stuck/);
+  });
+
+  it('builds a release artifact hub index with copyable artifact paths', () => {
+    const hub = buildReleaseArtifactHub({
+      generatedAt: '2026-06-24T07:00:00.000Z',
+      histories: [
+        {
+          proposalId: 'P-a',
+          generatedAt: '2026-06-24T05:00:00.000Z',
+          historyPath: 'release-local/P-a.json',
+          gateResults: [
+            { label: 'check', status: 'pass', exitCode: 0, durationMs: 1, checklist: [] },
+          ],
+          dirty: { ordinaryDirty: [], readmeDemoJson: [] },
+        },
+      ],
+      workflowRunsPath: 'release-local/workflow-runs.json',
+      healthPath: 'release-local/proposal-health.json',
+    });
+
+    assert.equal(hub.index.schemaVersion, 'release-artifact-hub.v1');
+    assert.deepEqual(
+      hub.index.files.map((file) => file.kind),
+      [
+        'delivery-report',
+        'ci-evidence',
+        'automation-json',
+        'diff-json',
+        'workflow-runs',
+        'proposal-health',
+      ],
+    );
+    assert.equal(hub.downloadActions[0]?.copyText, 'release-local/delivery-report.md');
+  });
+
+  it('builds a Web operator execution console model with dry-run and blocked actions', () => {
+    const consoleModel = buildOperatorExecutionConsole({
+      proposalId: 'P-a',
+      currentStatus: 'accepted',
+      safeStatusActions: [
+        {
+          proposalId: 'P-a',
+          currentStatus: 'accepted',
+          suggestedStatus: 'deployed',
+          reason: 'ready',
+          dryRunCommand: 'rdma release-ops apply-status --proposal P-a --to deployed --dry-run',
+        },
+      ],
+      blockedStatusActions: [
+        {
+          proposalId: 'P-a',
+          currentStatus: 'accepted',
+          suggestedStatus: 'delivered',
+          reason: 'delivered is not a safe next status from accepted',
+        },
+      ],
+      workflowSummary: { total: 1, passing: 1, failing: 0, running: 0 },
+    });
+
+    assert.equal(consoleModel.header, 'P-a accepted');
+    assert.equal(consoleModel.primaryButtons[0]?.label, 'Execute deployed');
+    assert.match(consoleModel.primaryButtons[0]?.dryRunText ?? '', /--dry-run/);
+    assert.equal(
+      consoleModel.blockedReasons[0],
+      'delivered is not a safe next status from accepted',
+    );
+  });
+
+  it('adds isolated environment roots to README verifier sandbox commands', () => {
+    const plan = buildReadmeVerifierSandboxPlan({
+      repoRoot: '/repo',
+      sandboxRoot: '/tmp/rdma-readme-verify',
+      commands: ['npm run cli -- deliver demo'],
+    });
+
+    assert.match(
+      plan.verificationCommands[0] ?? '',
+      /RDMA_STORAGE_ROOT=\/tmp\/rdma-readme-verify\/\.rdma\/data/,
+    );
+    assert.match(
+      plan.verificationCommands[0] ?? '',
+      /RDMA_SHIPPED_ROOT=\/tmp\/rdma-readme-verify\/\.rdma\/shipped/,
+    );
+    assert.match(
+      plan.verificationCommands[0] ?? '',
+      /RDMA_CONFIG_ROOT=\/tmp\/rdma-readme-verify\/\.rdma\/config/,
+    );
+  });
+
+  it('builds a release replay timeline across proposal, history, commit, and MCP state', () => {
+    const timeline = buildReleaseReplayTimeline({
+      proposal: { id: 'P-a', title: 'Replay', status: 'delivered' },
+      histories: [
+        {
+          proposalId: 'P-a',
+          generatedAt: '2026-06-24T05:00:00.000Z',
+          historyPath: 'release-local/P-a.json',
+          gateResults: [
+            { label: 'test', status: 'pass', exitCode: 0, durationMs: 1, checklist: [] },
+          ],
+          dirty: { ordinaryDirty: [], readmeDemoJson: [] },
+        },
+      ],
+      commits: [{ sha: 'abc1234', subject: 'feat: deliver P-a' }],
+    });
+
+    assert.deepEqual(
+      timeline.events.map((event) => event.kind),
+      ['proposal', 'gate', 'commit', 'status'],
+    );
+    assert.match(timeline.markdown, /P-a/);
+    assert.match(timeline.markdown, /abc1234/);
+  });
+
+  it('plans stale proposal recovery without mutating MCP state', () => {
+    const recovery = buildStaleProposalRecoveryPlan({
+      staleProposals: [
+        { id: 'P-old', title: 'Old accepted', status: 'accepted' },
+        { id: 'P-intake', title: 'Old intake', status: 'intake' },
+      ],
+      supersedingProposalId: 'P-new',
+      mcpHelperPath: '/tools/mcp_aisp.py',
+    });
+
+    assert.deepEqual(
+      recovery.actions.map(
+        (action) => `${action.proposalId}:${action.mode}:${action.nextStatus ?? 'none'}`,
+      ),
+      ['P-old:safe-next:deployed', 'P-intake:blocked:none'],
+    );
+    assert.match(recovery.markdown, /superseded by P-new/);
+    assert.match(
+      recovery.markdown,
+      /python3 \/tools\/mcp_aisp\.py update-proposal-status --proposal-id P-old --status deployed/,
     );
   });
 });

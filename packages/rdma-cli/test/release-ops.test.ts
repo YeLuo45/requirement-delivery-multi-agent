@@ -270,11 +270,19 @@ describe('release-ops CLI helpers', () => {
           'release-local/delivery-report.md',
           'release-local/ci-evidence.md',
           'release-local/automation.json',
+          'release-local/index.json',
+          'release-local/proposal-health.json',
+          'release-local/diff.json',
+          'release-local/replay.md',
         ],
       );
       assert.match(result.files[0]?.content ?? '', /# Release Operations PR Draft/);
       assert.match(result.files[1]?.content ?? '', /# CI Evidence Notes/);
       assert.match(result.files[2]?.content ?? '', /"schemaVersion": "release-ops.v2"/);
+      assert.match(result.files[3]?.content ?? '', /"schemaVersion": "release-artifact-hub.v1"/);
+      assert.match(result.files[4]?.content ?? '', /"summary"/);
+      assert.match(result.files[5]?.content ?? '', /"proposals"/);
+      assert.match(result.files[6]?.content ?? '', /# Release Replay Timeline/);
       assert.equal(existsSync(path.join(root, 'release-local', 'delivery-report.md')), true);
       assert.match(
         readFileSync(path.join(root, 'release-local', 'automation.json'), 'utf8'),

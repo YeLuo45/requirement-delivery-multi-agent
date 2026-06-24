@@ -5,7 +5,10 @@ import {
   type DeliveryHistoryProposal,
   type DeliveryHistoryRecord,
   buildCiEvidenceNotesArtifact,
+  buildProposalHealthDoctor,
+  buildReleaseArtifactHub,
   buildReleaseOperationsCenter,
+  buildReleaseReplayTimeline,
 } from '../../rdma-web/src/delivery-history.js';
 
 const RELEASE_OPS_SCHEMA_VERSION = 'release-ops.v2';
@@ -318,6 +321,31 @@ export async function writeReleaseOpsDeliveryReportFiles(
 ): Promise<{ readonly files: ReadonlyArray<ReleaseOpsWrittenFile> }> {
   const automation = renderReleaseOpsAutomationJson(payload);
   const artifactPaths = payload.releaseIndex.map((entry) => entry.historyPath);
+  const histories = payload.releaseIndex.map((entry) => ({
+    proposalId: entry.proposalId,
+    generatedAt: entry.generatedAt,
+    historyPath: entry.historyPath,
+    gateResults: [],
+    dirty: { ordinaryDirty: [], readmeDemoJson: [] },
+  }));
+  const health = buildProposalHealthDoctor({
+    proposals: payload.proposals,
+    histories,
+    pushedCommitSubjects: [],
+  });
+  const hub = buildReleaseArtifactHub({
+    generatedAt: options.generatedAt,
+    histories,
+    workflowRunsPath: 'release-local/workflow-runs.json',
+    healthPath: 'release-local/proposal-health.json',
+  });
+  const replay = payload.proposals[0]
+    ? buildReleaseReplayTimeline({
+        proposal: payload.proposals[0],
+        histories,
+        commits: [],
+      }).markdown
+    : '# Release Replay Timeline\n\nNo proposal history available.\n';
   const files: ReleaseOpsWrittenFile[] = [
     {
       path: path.join(dataRoot, 'release-local', 'delivery-report.md'),
@@ -335,6 +363,22 @@ export async function writeReleaseOpsDeliveryReportFiles(
     {
       path: path.join(dataRoot, 'release-local', 'automation.json'),
       content: `${JSON.stringify(automation, null, 2)}\n`,
+    },
+    {
+      path: path.join(dataRoot, 'release-local', 'index.json'),
+      content: `${JSON.stringify(hub.index, null, 2)}\n`,
+    },
+    {
+      path: path.join(dataRoot, 'release-local', 'proposal-health.json'),
+      content: `${JSON.stringify(health, null, 2)}\n`,
+    },
+    {
+      path: path.join(dataRoot, 'release-local', 'diff.json'),
+      content: `${JSON.stringify({ proposals: payload.releaseIndex }, null, 2)}\n`,
+    },
+    {
+      path: path.join(dataRoot, 'release-local', 'replay.md'),
+      content: replay,
     },
   ];
   for (const file of files) {
