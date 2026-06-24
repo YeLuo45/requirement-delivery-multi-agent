@@ -68,7 +68,7 @@ export function createBossAgent(config: BossConfig = {}): Agent {
         const recordPath = path.join(target, `${p.id}.json`);
         await fs.writeFile(
           recordPath,
-          JSON.stringify(
+          `${JSON.stringify(
             {
               proposalId: p.id,
               projectId: p.projectId,
@@ -79,7 +79,7 @@ export function createBossAgent(config: BossConfig = {}): Agent {
             },
             null,
             2,
-          ),
+          )}\n`,
         );
 
         return {
