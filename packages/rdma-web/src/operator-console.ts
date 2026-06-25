@@ -32,6 +32,62 @@ export interface AgentConfigRow {
   readonly prompts: 'prompts=on' | 'prompts=off';
 }
 
+export type RequiredAgentId =
+  | 'research'
+  | 'coordinator'
+  | 'designer'
+  | 'pm'
+  | 'dev'
+  | 'qa'
+  | 'boss';
+
+export interface AgentConfigWorkbenchAgent {
+  readonly agentId: RequiredAgentId;
+  readonly llm: string;
+  readonly source: string;
+  readonly prompts: 'prompts=on' | 'prompts=off';
+  readonly status: 'configured' | 'mock';
+  readonly note: string;
+}
+
+export interface AgentConfigWorkbenchSummary {
+  readonly totalAgents: number;
+  readonly configuredAgents: number;
+  readonly mockAgents: number;
+  readonly promptEnabledAgents: number;
+  readonly coverageLabel: string;
+  readonly riskLevel: 'ready' | 'medium' | 'high';
+}
+
+export interface AgentConfigWorkbenchAction {
+  readonly kind: 'copy-template' | 'validate-config' | 'run-smoke';
+  readonly label: string;
+  readonly command: string;
+  readonly description: string;
+}
+
+export interface AgentConfigWorkbenchTemplate {
+  readonly agentCount: number;
+  readonly yamlPreview: string;
+}
+
+export interface AgentConfigWorkbench {
+  readonly summary: AgentConfigWorkbenchSummary;
+  readonly agents: ReadonlyArray<AgentConfigWorkbenchAgent>;
+  readonly actions: ReadonlyArray<AgentConfigWorkbenchAction>;
+  readonly template: AgentConfigWorkbenchTemplate;
+}
+
+export const requiredAgentIds: ReadonlyArray<RequiredAgentId> = [
+  'research',
+  'coordinator',
+  'designer',
+  'pm',
+  'dev',
+  'qa',
+  'boss',
+];
+
 export const tuiParityCapabilities: ReadonlyArray<TuiParityCapability> = [
   {
     id: 'list',
@@ -91,6 +147,91 @@ export function buildOperatorConsoleModel(input: {
     recent,
     capabilities: tuiParityCapabilities,
   };
+}
+
+export function buildAgentConfigWorkbench(input: {
+  readonly configs: Record<string, Pick<AgentRuntimeConfig, 'source' | 'llm' | 'prompts'>>;
+}): AgentConfigWorkbench {
+  const rowsById = new Map(renderAgentConfigRows(input.configs).map((row) => [row.agentId, row]));
+  const agents = requiredAgentIds.map((agentId) => {
+    const row = rowsById.get(agentId);
+    const status = row?.llm && row.llm !== 'mock' ? 'configured' : 'mock';
+    return {
+      agentId,
+      llm: row?.llm ?? 'mock',
+      source: row?.source ?? 'default',
+      prompts: row?.prompts ?? 'prompts=off',
+      status,
+      note:
+        status === 'configured'
+          ? 'Provider override is active for this pipeline role.'
+          : 'Mock mode is active; configure a provider before production-like runs.',
+    } satisfies AgentConfigWorkbenchAgent;
+  });
+  const configuredAgents = agents.filter((agent) => agent.status === 'configured').length;
+  const mockAgents = agents.length - configuredAgents;
+  const promptEnabledAgents = agents.filter((agent) => agent.prompts === 'prompts=on').length;
+  const riskLevel = mockAgents === 0 ? 'ready' : mockAgents <= 2 ? 'medium' : 'high';
+  return {
+    summary: {
+      totalAgents: agents.length,
+      configuredAgents,
+      mockAgents,
+      promptEnabledAgents,
+      coverageLabel: `${configuredAgents}/${agents.length} configured`,
+      riskLevel,
+    },
+    agents,
+    actions: buildAgentConfigActions(riskLevel),
+    template: {
+      agentCount: requiredAgentIds.length,
+      yamlPreview: buildAgentConfigTemplatePreview(),
+    },
+  };
+}
+
+function buildAgentConfigActions(
+  riskLevel: AgentConfigWorkbenchSummary['riskLevel'],
+): AgentConfigWorkbenchAction[] {
+  const base: AgentConfigWorkbenchAction[] = [
+    {
+      kind: 'copy-template',
+      label: 'Copy seven-agent template',
+      command: 'npm run cli -- config init',
+      description: 'Create a complete agents.yaml scaffold for every pipeline role.',
+    },
+    {
+      kind: 'validate-config',
+      label: 'Validate config',
+      command: 'npm run cli -- config validate',
+      description: 'Check provider references and prompt files before a run.',
+    },
+  ];
+  if (riskLevel === 'ready') {
+    return [
+      ...base,
+      {
+        kind: 'run-smoke',
+        label: 'Run configured smoke',
+        command: 'npm run e2e',
+        description: 'Exercise the configured multi-agent handoff with the hello-world flow.',
+      },
+    ];
+  }
+  return base;
+}
+
+function buildAgentConfigTemplatePreview(): string {
+  const lines = ['agents:'];
+  for (const agentId of requiredAgentIds) {
+    lines.push(
+      `  ${agentId}:`,
+      '    llm:',
+      '      provider: openai',
+      `      model: ${agentId}-model`,
+    );
+  }
+  return lines.join('\n');
 }
 
 export function renderAgentConfigRows(
